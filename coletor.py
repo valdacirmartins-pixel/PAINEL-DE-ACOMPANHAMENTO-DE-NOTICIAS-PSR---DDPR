@@ -2,10 +2,17 @@ import os
 import re
 import time
 import random
+import argparse
 import unicodedata
-from datetime import datetime
+import hashlib
+from difflib import SequenceMatcher
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 
 import pandas as pd
+import requests
+from bs4 import BeautifulSoup
 from ddgs import DDGS
 from newspaper import Article
 
@@ -16,6 +23,8 @@ from sqlalchemy.exc import SQLAlchemyError
 # ============================================================
 # CONFIGURAÇÕES
 # ============================================================
+
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "America/Sao_Paulo")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -35,55 +44,32 @@ URL_IBGE = (
     "Municipios-Brasileiros/master/csv/municipios.csv"
 )
 
-QUERIES = [
-    "morador de rua morto",
-    "morador de rua morreu",
-    "sem teto morto",
-    "assassinato morador de rua",
-    "violência contra morador de rua",
-    "morador em situação de rua morto",
-    "pessoa em situação de rua morta",
-    "morador de rua agredido",
-    "morador de rua atropelado",
+PASTA_SAIDA_PADRAO = os.getenv("PASTA_SAIDA_COLETOR", "saida_coletor")
+MAX_RESULTS_POR_QUERY = int(os.getenv("MAX_RESULTS_POR_QUERY", "50"))
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.0 Safari/605.1.15",
 ]
 
-CATEGORIAS = {
-    "Morte": [
-        "morto",
-        "morta",
-        "morreu",
-        "óbito",
-        "obito",
-        "falecimento",
-        "morte",
-        "corpo encontrado",
-        "encontrado morto",
-        "encontrada morta",
-    ],
-    "Violência": [
-        "assassinado",
-        "assassinada",
-        "agredido",
-        "agredida",
-        "espancado",
-        "espancada",
-        "violência",
-        "violencia",
-        "homicídio",
-        "homicidio",
-        "facada",
-        "tiro",
-        "queimado",
-        "queimada",
-    ],
-    "Acidente": [
-        "acidente",
-        "atropelado",
-        "atropelada",
-        "atropelamento",
-    ],
-    "Outros": []
-}
+COLUNAS_CSV = [
+    "titulo",
+    "url",
+    "municipio",
+    "uf",
+    "categoria",
+    "latitude",
+    "longitude",
+    "data_coleta",
+    "data_publicacao",
+    "query_origem",
+]
 
 MAPA_UF = {
     11: "RO",
@@ -115,30 +101,157 @@ MAPA_UF = {
     53: "DF",
 }
 
+CAPITAIS_E_CIDADES_CHAVE = [
+    "São Paulo",
+    "Rio de Janeiro",
+    "Belo Horizonte",
+    "Salvador",
+    "Fortaleza",
+    "Brasília",
+    "Curitiba",
+    "Recife",
+    "Porto Alegre",
+    "Manaus",
+    "Belém",
+    "Goiânia",
+    "Guarulhos",
+    "Campinas",
+    "São Luís",
+    "Maceió",
+    "Natal",
+    "Teresina",
+    "João Pessoa",
+    "Aracaju",
+    "Cuiabá",
+    "Campo Grande",
+    "Florianópolis",
+    "Vitória",
+    "Porto Velho",
+    "Boa Vista",
+    "Rio Branco",
+    "Macapá",
+    "Palmas",
+    "Santos",
+    "Sorocaba",
+    "Ribeirão Preto",
+    "São José dos Campos",
+    "Niterói",
+    "Duque de Caxias",
+    "Nova Iguaçu",
+    "Osasco",
+]
 
-# ============================================================
-# NORMALIZAÇÃO DE TEXTO
-# ============================================================
+DOMINIOS_NOTICIAS = [
+    "g1.globo.com",
+    "uol.com.br",
+    "terra.com.br",
+    "r7.com",
+    "metropoles.com",
+    "cnnbrasil.com.br",
+    "band.uol.com.br",
+    "gazetadopovo.com.br",
+    "otempo.com.br",
+    "correiobraziliense.com.br",
+    "em.com.br",
+    "diariodonordeste.verdesmares.com.br",
+    "jc.ne10.uol.com.br",
+    "correio24horas.com.br",
+    "acritica.com",
+    "dol.com.br",
+]
 
-def normalizar_texto(valor):
-    """
-    Normaliza texto para facilitar buscas:
-    - converte para minúsculo;
-    - remove acentos;
-    - remove espaços duplicados.
-    """
-    texto = str(valor or "").lower().strip()
+TERMOS_POP_RUA_FORTES = [
+    "morador de rua",
+    "moradora de rua",
+    "moradores de rua",
+    "pessoa em situação de rua",
+    "pessoas em situação de rua",
+    "população em situação de rua",
+    "populacao em situacao de rua",
+    "sem-teto",
+    "sem teto",
+]
 
-    texto = unicodedata.normalize("NFKD", texto)
-    texto = "".join(
-        caractere
-        for caractere in texto
-        if not unicodedata.combining(caractere)
-    )
+TERMOS_POP_RUA_FRACOS = [
+    "vivendo nas ruas",
+    "vivia nas ruas",
+    "em situação de rua",
+    "em situacao de rua",
+    "situação de rua",
+    "situacao de rua",
+    "andarilho",
+]
 
-    texto = re.sub(r"\s+", " ", texto)
+TERMOS_OBITO = [
+    "morto",
+    "morta",
+    "mortos",
+    "mortas",
+    "morreu",
+    "morreram",
+    "morre",
+    "morte",
+    "mortes",
+    "óbito",
+    "obito",
+    "óbitos",
+    "obitos",
+    "falecimento",
+    "sem vida",
+    "fatal",
+    "vítima fatal",
+    "vitima fatal",
+    "encontrado morto",
+    "encontrada morta",
+    "encontrado sem vida",
+    "encontrada sem vida",
+]
 
-    return texto
+TERMOS_ACIDENTE_FATAL = [
+    "atropelado",
+    "atropelada",
+    "atropelamento",
+    "acidente fatal",
+]
+
+TERMOS_VIOLENCIA_FATAL = [
+    "homicídio",
+    "homicidio",
+    "assassinado",
+    "assassinada",
+    "crime",
+    "violência",
+    "violencia",
+]
+
+TERMOS_EXCLUSAO_RUIDO = [
+    "censo",
+    "cadastro único",
+    "cadastro unico",
+    "política pública",
+    "politica publica",
+    "campanha",
+    "doação",
+    "doacao",
+    "acolhimento",
+    "abrigo",
+    "frio",
+    "inverno",
+    "opinião",
+    "opiniao",
+    "editorial",
+    "podcast",
+    "filme",
+    "série",
+    "serie",
+]
+
+CATEGORIAS = {
+    "Morte": TERMOS_OBITO,
+    "Violência": TERMOS_VIOLENCIA_FATAL,
+    "Acidente": TERMOS_ACIDENTE_FATAL,
+    "Outros": [],
+}
 
 
 # ============================================================
@@ -146,10 +259,7 @@ def normalizar_texto(valor):
 # ============================================================
 
 def criar_tabela():
-    """
-    Cria a tabela principal caso ainda não exista.
-    A URL fica como UNIQUE para evitar notícia duplicada.
-    """
+
     sql = """
     CREATE TABLE IF NOT EXISTS pop_rua (
         id SERIAL PRIMARY KEY,
@@ -184,10 +294,31 @@ def criar_tabela():
 
 
 def inserir_registro(registro):
-    """
-    Insere um registro na tabela pop_rua.
-    Caso a URL já exista, ignora.
-    """
+
+    registro_db = registro.copy()
+
+    try:
+        if registro_db.get("data_publicacao"):
+            if hasattr(registro_db["data_publicacao"], "tzinfo"):
+                if registro_db["data_publicacao"].tzinfo is not None:
+                    registro_db["data_publicacao"] = (
+                        registro_db["data_publicacao"]
+                        .replace(tzinfo=None)
+                    )
+    except Exception:
+        pass
+
+    try:
+        if registro_db.get("data_coleta"):
+            if hasattr(registro_db["data_coleta"], "tzinfo"):
+                if registro_db["data_coleta"].tzinfo is not None:
+                    registro_db["data_coleta"] = (
+                        registro_db["data_coleta"]
+                        .replace(tzinfo=None)
+                    )
+    except Exception:
+        pass
+
     sql = """
     INSERT INTO pop_rua (
         titulo,
@@ -217,248 +348,12 @@ def inserir_registro(registro):
     """
 
     with engine.begin() as conn:
-        result = conn.execute(text(sql), registro)
+        result = conn.execute(text(sql), registro_db)
         return result.rowcount
 
 
-# ============================================================
-# MUNICÍPIOS
-# ============================================================
-
-def carregar_municipios():
-    """
-    Carrega base pública de municípios brasileiros com latitude e longitude.
-    """
-    print("📍 Carregando base de municípios do IBGE/GitHub...")
-
-    df_municipios = pd.read_csv(URL_IBGE)
-
-    colunas_necessarias = {
-        "nome",
-        "latitude",
-        "longitude",
-        "codigo_uf"
-    }
-
-    colunas_faltando = colunas_necessarias - set(df_municipios.columns)
-
-    if colunas_faltando:
-        raise RuntimeError(
-            f"A base de municípios está sem as colunas: {colunas_faltando}"
-        )
-
-    df_municipios["nome_norm"] = df_municipios["nome"].apply(normalizar_texto)
-
-    coords_local = {}
-
-    for _, row in df_municipios.iterrows():
-        codigo_uf = int(row["codigo_uf"])
-
-        municipio_norm = row["nome_norm"]
-
-        coords_local[municipio_norm] = {
-            "nome_original": row["nome"],
-            "latitude": float(row["latitude"]),
-            "longitude": float(row["longitude"]),
-            "uf": MAPA_UF.get(codigo_uf, "NI")
-        }
-
-    lista_local = sorted(
-        coords_local.keys(),
-        key=len,
-        reverse=True
-    )
-
-    print(f"✅ Municípios carregados: {len(lista_local)}")
-
-    return coords_local, lista_local
-
-
-# Carrega uma vez na inicialização do script.
-COORDS, LISTA_MUNICIPIOS = carregar_municipios()
-
-
-# ============================================================
-# DETECÇÃO DE MUNICÍPIO
-# ============================================================
-
-def detectar_municipio(texto):
-    """
-    Tenta encontrar o município dentro do título/texto da notícia.
-
-    A busca é normalizada para evitar problema com acentos:
-    São Paulo -> sao paulo
-    Brasília -> brasilia
-    """
-    texto_norm = normalizar_texto(texto)
-
-    for municipio_norm in LISTA_MUNICIPIOS:
-        padrao = rf"\b{re.escape(municipio_norm)}\b"
-
-        if re.search(padrao, texto_norm):
-            return municipio_norm
-
-    return None
-
-
-# ============================================================
-# CLASSIFICAÇÃO
-# ============================================================
-
-def classificar(texto):
-    """
-    Classifica a notícia com base em palavras-chave simples.
-    """
-    texto_norm = normalizar_texto(texto)
-
-    for categoria, palavras in CATEGORIAS.items():
-        if categoria == "Outros":
-            continue
-
-        for palavra in palavras:
-            palavra_norm = normalizar_texto(palavra)
-
-            if palavra_norm in texto_norm:
-                return categoria
-
-    return "Outros"
-
-
-# ============================================================
-# PROCESSAMENTO DE NOTÍCIA
-# ============================================================
-
-def processar_noticia(url, query_origem):
-    """
-    Baixa e processa uma notícia.
-    Retorna um dicionário pronto para inserir no banco.
-    """
-    try:
-        artigo = Article(
-            url,
-            language="pt",
-            request_timeout=10
-        )
-
-        artigo.download()
-        artigo.parse()
-
-        titulo = artigo.title or ""
-        texto = artigo.text or ""
-
-        if not titulo and not texto:
-            print(f"⚠️ Artigo sem título/texto: {url}")
-            return None
-
-        base = f" {titulo} {texto} "
-
-        municipio_norm = detectar_municipio(base)
-
-        if municipio_norm:
-            info = COORDS.get(municipio_norm)
-
-            municipio = str(info["nome_original"]).title()
-            uf = info["uf"]
-            latitude = info["latitude"]
-            longitude = info["longitude"]
-        else:
-            municipio = "Não identificado"
-            uf = "NI"
-            latitude = -14.2350
-            longitude = -51.9253
-
-        categoria = classificar(base)
-
-        # Pequeno deslocamento visual para evitar marcadores exatamente sobrepostos.
-        latitude = float(latitude) + random.uniform(-0.02, 0.02)
-        longitude = float(longitude) + random.uniform(-0.02, 0.02)
-
-        data_publicacao = artigo.publish_date
-
-        # Alguns sites retornam data com timezone. Para evitar erro no PostgreSQL,
-        # removemos o timezone mantendo o horário.
-        if data_publicacao is not None and data_publicacao.tzinfo is not None:
-            data_publicacao = data_publicacao.replace(tzinfo=None)
-
-        return {
-            "titulo": titulo.strip(),
-            "url": url,
-            "municipio": municipio,
-            "uf": uf,
-            "categoria": categoria,
-            "latitude": latitude,
-            "longitude": longitude,
-            "data_coleta": datetime.now(),
-            "data_publicacao": data_publicacao,
-            "query_origem": query_origem,
-        }
-
-    except Exception as e:
-        print(f"❌ Erro ao processar URL: {url}")
-        print(f"   Motivo: {e}")
-        return None
-
-
-# ============================================================
-# BUSCA DE URLS
-# ============================================================
-
-def buscar_urls():
-    """
-    Busca URLs no DuckDuckGo usando DDGS.
-    Retorna um dicionário:
-    {
-        url: query_origem
-    }
-    """
-    urls_encontradas = {}
-
-    print("🔎 Iniciando buscas...")
-
-    try:
-        with DDGS() as ddgs:
-            for query in QUERIES:
-                print(f"🔍 Buscando query: {query}")
-
-                try:
-                    resultados = ddgs.text(
-                        query,
-                        region="br-pt",
-                        max_results=50
-                    )
-
-                    for resultado in resultados:
-                        url = resultado.get("href")
-
-                        if not url:
-                            continue
-
-                        if url not in urls_encontradas:
-                            urls_encontradas[url] = query
-
-                except Exception as e:
-                    print(f"❌ Erro na busca da query: {query}")
-                    print(f"   Motivo: {e}")
-
-                time.sleep(random.uniform(1.0, 2.0))
-
-    except Exception as e:
-        print("❌ Erro geral ao iniciar DDGS.")
-        print(f"   Motivo: {e}")
-
-    print(f"✅ URLs únicas encontradas: {len(urls_encontradas)}")
-
-    return urls_encontradas
-
-
-# ============================================================
-# RESUMO NO BANCO
-# ============================================================
-
 def exibir_resumo_banco():
-    """
-    Exibe resumo simples da tabela após a coleta.
-    """
+
     sql = """
     SELECT
         COUNT(*) AS total_registros,
@@ -483,73 +378,366 @@ def exibir_resumo_banco():
 
 
 # ============================================================
-# MAIN
+# UTILITÁRIOS
 # ============================================================
 
-def main():
-    print("======================================")
-    print("🚀 INICIANDO COLETOR POP RUA")
-    print(f"⏰ Data/hora início: {datetime.now()}")
-    print("======================================")
+def agora_sao_paulo():
+    return datetime.now(ZoneInfo(APP_TIMEZONE))
 
-    criar_tabela()
 
-    urls = buscar_urls()
+def normalizar_data_para_csv(valor):
 
-    if not urls:
-        print("⚠️ Nenhuma URL encontrada. Finalizando.")
-        return
+    if valor is None or pd.isna(valor):
+        return None
 
-    total_processadas = 0
-    total_inseridas = 0
-    total_duplicadas = 0
-    total_erros = 0
+    if isinstance(valor, pd.Timestamp):
+        valor = valor.to_pydatetime()
 
-    for indice, (url, query_origem) in enumerate(urls.items(), start=1):
-        print("--------------------------------------")
-        print(f"Processando {indice}/{len(urls)}")
-        print(f"URL: {url}")
+    if isinstance(valor, datetime):
+        return valor.isoformat(sep=" ", timespec="seconds")
 
-        registro = processar_noticia(url, query_origem)
+    return str(valor)
 
-        if not registro:
-            total_erros += 1
-            time.sleep(random.uniform(0.5, 1.5))
+
+def converter_para_datetime_sp(valor):
+
+    if valor is None:
+        return None
+
+    try:
+        if pd.isna(valor):
+            return None
+    except Exception:
+        pass
+
+    try:
+
+        if isinstance(valor, pd.Timestamp):
+            ts = valor
+        else:
+            ts = pd.to_datetime(valor, errors="coerce")
+
+        if pd.isna(ts):
+            return None
+
+        if isinstance(ts, pd.Timestamp):
+
+            if ts.tzinfo is None:
+                return ts.to_pydatetime().replace(
+                    tzinfo=ZoneInfo(APP_TIMEZONE)
+                )
+
+            return ts.tz_convert(APP_TIMEZONE).to_pydatetime()
+
+        if isinstance(ts, datetime):
+
+            if ts.tzinfo is None:
+                return ts.replace(
+                    tzinfo=ZoneInfo(APP_TIMEZONE)
+                )
+
+            return ts.astimezone(
+                ZoneInfo(APP_TIMEZONE)
+            )
+
+    except Exception:
+        return None
+
+    return None
+
+
+def parsear_data_cli(valor, fim_do_dia=False):
+
+    if not valor:
+        return None
+
+    dt = pd.to_datetime(valor, errors="coerce")
+
+    if pd.isna(dt):
+        raise ValueError(
+            f"Data inválida: {valor}. "
+            f"Use o formato YYYY-MM-DD."
+        )
+
+    py_dt = dt.to_pydatetime().replace(
+        tzinfo=ZoneInfo(APP_TIMEZONE)
+    )
+
+    if fim_do_dia:
+        return py_dt.replace(
+            hour=23,
+            minute=59,
+            second=59,
+            microsecond=999999
+        )
+
+    return py_dt.replace(
+        hour=0,
+        minute=0,
+        second=0,
+        microsecond=0
+    )
+
+
+def resolver_periodo(
+    ano=None,
+    data_inicio=None,
+    data_fim=None
+):
+
+    if data_inicio or data_fim:
+
+        inicio = (
+            parsear_data_cli(data_inicio)
+            if data_inicio else None
+        )
+
+        fim = (
+            parsear_data_cli(data_fim, fim_do_dia=True)
+            if data_fim else None
+        )
+
+        return inicio, fim
+
+    if ano:
+
+        inicio = datetime(
+            int(ano),
+            1,
+            1,
+            0,
+            0,
+            0,
+            tzinfo=ZoneInfo(APP_TIMEZONE)
+        )
+
+        fim = datetime(
+            int(ano),
+            12,
+            31,
+            23,
+            59,
+            59,
+            999999,
+            tzinfo=ZoneInfo(APP_TIMEZONE)
+        )
+
+        return inicio, fim
+
+    return None, None
+
+
+def formatar_periodo(inicio, fim):
+
+    if not inicio and not fim:
+        return "sem filtro de data"
+
+    ini_txt = (
+        inicio.strftime("%Y-%m-%d")
+        if inicio else "início aberto"
+    )
+
+    fim_txt = (
+        fim.strftime("%Y-%m-%d")
+        if fim else "fim aberto"
+    )
+
+    return f"{ini_txt} até {fim_txt}"
+
+
+def data_dentro_periodo(
+    data_ref,
+    data_inicio=None,
+    data_fim=None
+):
+
+    if data_ref is None:
+        return False
+
+    if data_inicio and data_ref < data_inicio:
+        return False
+
+    if data_fim and data_ref > data_fim:
+        return False
+
+    return True
+
+
+def extrair_data_da_url(url):
+
+    texto = str(url or "")
+
+    padroes = [
+        r"(?<!\d)(20\d{2})[/-]([01]\d)[/-]([0-3]\d)(?!\d)",
+        r"(?<!\d)(20\d{2})([01]\d)([0-3]\d)(?!\d)",
+    ]
+
+    for padrao in padroes:
+
+        m = re.search(padrao, texto)
+
+        if not m:
             continue
 
-        total_processadas += 1
-
         try:
-            inseriu = inserir_registro(registro)
+            ano, mes, dia = map(int, m.groups())
 
-            if inseriu:
-                total_inseridas += 1
-                print(f"✅ Inserido: {registro['titulo'][:100]}")
-            else:
-                total_duplicadas += 1
-                print(f"🔁 Duplicado ignorado: {registro['titulo'][:100]}")
+            return datetime(
+                ano,
+                mes,
+                dia,
+                12,
+                0,
+                0,
+                tzinfo=ZoneInfo(APP_TIMEZONE)
+            )
 
-        except SQLAlchemyError as e:
-            total_erros += 1
-            print("❌ Erro ao inserir no banco.")
-            print(f"   Motivo: {e}")
+        except Exception:
+            continue
 
-        time.sleep(random.uniform(0.5, 1.5))
-
-    print("======================================")
-    print("📌 RESUMO DA EXECUÇÃO")
-    print("======================================")
-    print(f"URLs encontradas: {len(urls)}")
-    print(f"Notícias processadas: {total_processadas}")
-    print(f"Novos registros inseridos: {total_inseridas}")
-    print(f"Duplicados ignorados: {total_duplicadas}")
-    print(f"Erros: {total_erros}")
-    print(f"⏰ Data/hora fim: {datetime.now()}")
-
-    exibir_resumo_banco()
-
-    print("🚀 FINALIZADO")
+    return None
 
 
-if __name__ == "__main__":
-    main()
+def normalizar_texto(valor):
+
+    texto = str(valor or "").lower().strip()
+
+    texto = unicodedata.normalize("NFKD", texto)
+
+    texto = "".join(
+        c for c in texto
+        if not unicodedata.combining(c)
+    )
+
+    texto = re.sub(r"\s+", " ", texto)
+
+    return texto
+
+
+def canonizar_url(url):
+
+    if not url:
+        return ""
+
+    try:
+
+        parsed = urlparse(url.strip())
+
+        query = []
+
+        for chave, valor in parse_qsl(
+            parsed.query,
+            keep_blank_values=True
+        ):
+
+            chave_norm = chave.lower()
+
+            if chave_norm.startswith("utm_"):
+                continue
+
+            if chave_norm in {
+                "fbclid",
+                "gclid",
+                "mc_cid",
+                "mc_eid",
+                "igshid",
+                "ref",
+                "ref_src"
+            }:
+                continue
+
+            query.append((chave, valor))
+
+        parsed = parsed._replace(
+            scheme=parsed.scheme.lower() or "https",
+            netloc=parsed.netloc.lower(),
+            query=urlencode(query),
+            fragment="",
+        )
+
+        return urlunparse(parsed)
+
+    except Exception:
+        return str(url).strip()
+
+
+# RESTANTE DO SCRIPT PERMANECE IGUAL
+# ============================================================
+# AQUI VOCÊ MANTÉM TODO O RESTANTE EXATAMENTE COMO ESTÁ
+# ============================================================
+
+# ============================================================
+# IMPORTANTE:
+# NO LOOP PRINCIPAL DO MAIN TROQUE SOMENTE ISSO:
+# ============================================================
+
+"""
+ANTES:
+
+registros.append(registro)
+urls_processadas.add(url_canonica)
+titulos_norm.append(titulo_norm)
+
+DEPOIS:
+"""
+
+try:
+
+    inseriu = inserir_registro(registro)
+
+    if inseriu:
+
+        registros.append(registro)
+
+        urls_processadas.add(url_canonica)
+
+        titulos_norm.append(titulo_norm)
+
+        print("💾 Inserido no PostgreSQL")
+
+    else:
+
+        total_duplicados += 1
+
+        print("🔁 URL já existente no banco")
+
+        continue
+
+except SQLAlchemyError as e:
+
+    total_erros += 1
+
+    print("❌ Erro ao inserir no PostgreSQL")
+    print(f"   Motivo: {e}")
+
+    continue
+
+
+# ============================================================
+# E NO MAIN:
+# ============================================================
+
+"""
+LOGO APÓS:
+
+print("======================================")
+
+ADICIONE:
+"""
+
+criar_tabela()
+
+
+# ============================================================
+# E NO FINAL:
+# ============================================================
+
+"""
+ANTES DE:
+
+print("🚀 FINALIZADO")
+
+ADICIONE:
+"""
+
+exibir_resumo_banco()
