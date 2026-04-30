@@ -45,7 +45,7 @@ URL_IBGE = (
 )
 
 PASTA_SAIDA_PADRAO = os.getenv("PASTA_SAIDA_COLETOR", "saida_coletor")
-MAX_RESULTS_POR_QUERY = int(os.getenv("MAX_RESULTS_POR_QUERY", "50"))
+MAX_RESULTS_POR_QUERY = int(os.getenv("MAX_RESULTS_POR_QUERY", "500"))
 
 USER_AGENTS = [
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
