@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 from ddgs import DDGS
-from newspaper import Article
+from newspaper import Article, Config  # Importado Config para melhorar a extração
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,6 +23,11 @@ if not DATABASE_URL:
     raise RuntimeError("DATABASE_URL não configurada")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+
+# Configuração para evitar bloqueios e melhorar qualidade da extração
+config = Config()
+config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+config.request_timeout = 10  # Limite de 10 segundos por download
 
 # ============================================================
 # BANCO
@@ -60,7 +65,6 @@ def inserir_registro(registro):
     )
     ON CONFLICT (url) DO NOTHING;
     """
-
     with engine.begin() as conn:
         result = conn.execute(text(sql), registro)
         return result.rowcount
@@ -69,7 +73,6 @@ def inserir_registro(registro):
 def resumo():
     with engine.begin() as conn:
         r = conn.execute(text("SELECT COUNT(*) FROM pop_rua")).scalar()
-
     print(f"📊 Total no banco: {r}")
 
 
@@ -80,15 +83,15 @@ def resumo():
 CIDADES = ["São Paulo", "Rio de Janeiro", "Brasília", "Salvador"]
 
 CATEGORIAS = {
-    "Morte": ["morto", "morreu", "óbito"],
-    "Violência": ["assassinado", "agredido"],
-    "Acidente": ["atropelado", "acidente"],
+    "Morte": ["morto", "morreu", "óbito", "falecimento", "cadáver"],
+    "Violência": ["assassinado", "agredido", "esfaqueado", "baleado", "espancado"],
+    "Acidente": ["atropelado", "acidente", "incêndio", "queimado"],
 }
 
 QUERIES = [
     "morador de rua morto {cidade}",
-    "morador de rua morreu {cidade}",
-    "pessoa em situação de rua morta {cidade}",
+    "pessoa em situação de rua morreu {cidade}",
+    "notícia violência morador de rua {cidade}",
 ]
 
 # ============================================================
@@ -118,46 +121,47 @@ def detectar_cidade(texto):
 # ============================================================
 
 def main():
-
     print("🚀 INICIANDO COLETOR...")
-
     criar_tabela()
 
-    urls = set()
+    urls_processadas = set()
     total_inseridos = 0
     total_duplicados = 0
 
     with DDGS() as ddgs:
-
         for cidade in CIDADES:
             for q in QUERIES:
-
                 query = q.format(cidade=cidade)
-
-                resultados = ddgs.text(query, region="br-pt", max_results=20)
+                print(f"🔍 Buscando: {query}")
+                
+                try:
+                    resultados = ddgs.text(query, region="br-pt", max_results=25)
+                except Exception as e:
+                    print(f"⚠️ Erro na busca DuckDuckGo: {e}")
+                    continue
 
                 for r in resultados:
-
-                    url = r["href"]
-
-                    if url in urls:
+                    url = r.get("href")
+                    if not url or url in urls_processadas:
                         continue
 
-                    urls.add(url)
+                    urls_processadas.add(url)
 
                     try:
-                        art = Article(url, language="pt")
+                        # Aplica as configurações de timeout e User-Agent
+                        art = Article(url, language="pt", config=config)
                         art.download()
                         art.parse()
 
                         texto = (art.text or "").lower()
                         titulo = art.title or ""
 
-                        if not texto:
+                        # Qualidade: Ignora se o texto for muito curto (provável erro de carregamento ou paywall)
+                        if len(texto) < 150:
                             continue
 
-                        categoria = classificar(texto)
-                        municipio = detectar_cidade(texto)
+                        categoria = classificar(texto + " " + titulo.lower())
+                        municipio = detectar_cidade(texto + " " + titulo.lower())
 
                         registro = {
                             "titulo": titulo,
@@ -173,32 +177,27 @@ def main():
 
                         try:
                             inseriu = inserir_registro(registro)
-
                             if inseriu:
                                 total_inseridos += 1
-                                print("💾 Inserido:", titulo[:60])
-
+                                print(f"✅ Salvo: {titulo[:50]}...")
+                                # Delay apenas se houve sucesso para evitar sobrecarga
+                                time.sleep(random.uniform(0.5, 1.5))
                             else:
                                 total_duplicados += 1
-
                         except SQLAlchemyError as e:
-                            print("❌ ERRO DB:", e)
+                            print(f"❌ Erro de Banco: {e}")
 
-                        time.sleep(random.uniform(1, 2))
-
-                    except Exception:
+                    except Exception as e:
+                        # Pula silenciosamente erros de download/parse de sites específicos
                         continue
 
-    print("\n========== RESULTADO ==========")
-    print(f"Inseridos: {total_inseridos}")
-    print(f"Duplicados: {total_duplicados}")
-
+    print("\n" + "="*30)
+    print(f"✨ FIM DA COLETA")
+    print(f"📥 Novos registros: {total_inseridos}")
+    print(f"🔄 Já existiam: {total_duplicados}")
     resumo()
+    print("="*30)
 
-
-# ============================================================
-# EXECUÇÃO
-# ============================================================
 
 if __name__ == "__main__":
     main()
