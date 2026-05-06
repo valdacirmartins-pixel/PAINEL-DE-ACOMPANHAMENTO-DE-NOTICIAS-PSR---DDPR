@@ -1,6 +1,7 @@
 import os
 import time
 import random
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -9,21 +10,28 @@ from newspaper import Article, Config
 from sqlalchemy import create_engine, text
 
 # ============================================================
-# CONFIGURAÇÃO NACIONAL
+# CONFIGURAÇÃO AVANÇADA
 # ============================================================
 
 APP_TIMEZONE = "America/Sao_Paulo"
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
-# Lista completa de UFs para busca nacional
 UFS_BRASIL = [
     'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
     'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
     'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
 ]
 
-# Coordenadas centrais de cada estado para o MAPA funcionar
+# Ampliando os termos de busca para encontrar MAIS notícias
+TERMOS_BUSCA = [
+    "morador de rua morto {local}",
+    "pessoa em situação de rua morreu {local}",
+    "corpo encontrado morador de rua {local}",
+    "homicídio pessoa em situação de rua {local}",
+    "atropelamento morador de rua {local}"
+]
+
 COORD_CENTRAIS = {
     'AC': (-9.02, -70.81), 'AL': (-9.57, -36.78), 'AP': (0.03, -51.07),
     'AM': (-3.41, -64.03), 'BA': (-12.51, -41.70), 'CE': (-5.20, -39.53),
@@ -37,15 +45,14 @@ COORD_CENTRAIS = {
 }
 
 config = Config()
-config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
-config.request_timeout = 10 
+config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+config.request_timeout = 15 
 
 # ============================================================
-# FUNÇÕES AUXILIARES
+# LÓGICA DE EXTRAÇÃO E BANCO
 # ============================================================
 
 def inserir_registro(registro):
-    # ATUALIZADO: Agora inclui latitude e longitude no SQL
     sql = """
     INSERT INTO pop_rua (titulo, url, municipio, uf, categoria, latitude, longitude, data_coleta, data_publicacao)
     VALUES (:titulo, :url, :municipio, :uf, :categoria, :latitude, :longitude, :data_coleta, :data_publicacao)
@@ -54,59 +61,80 @@ def inserir_registro(registro):
     with engine.begin() as conn:
         return conn.execute(text(sql), registro).rowcount
 
-def extrair_municipio(texto, uf_alvo):
-    return f"Estado de {uf_alvo}"
+def classificar_categoria(texto):
+    texto = texto.lower()
+    if any(x in texto for x in ["morto", "morreu", "óbito", "corpo", "homicídio"]): return "Morte"
+    if any(x in texto for x in ["agredido", "violência", "esfaqueado", "baleado"]): return "Violência"
+    if any(x in texto for x in ["atropelado", "acidente", "incêndio"]): return "Acidente"
+    return "Outros"
 
 # ============================================================
 # MAIN
 # ============================================================
 
 def main():
-    print("🌍 INICIANDO COLETA NACIONAL COM COORDENADAS...")
+    print(f"🚀 INICIANDO SUPER COLETA: {len(UFS_BRASIL)} estados x {len(TERMOS_BUSCA)} termos")
     
+    urls_vistas = set()
+    total_novos = 0
+
     with DDGS() as ddgs:
         for uf in UFS_BRASIL:
-            query = f"morador de rua morreu {uf} 2026"
-            print(f"🔎 Buscando em: {uf}")
-            
-            try:
-                resultados = ddgs.text(query, region="br-pt", max_results=10)
+            for termo in TERMOS_BUSCA:
+                query = termo.format(local=uf)
+                print(f"🔍 Buscando: {query}")
                 
-                for r in resultados:
-                    url = r.get("href")
-                    try:
-                        art = Article(url, language="pt", config=config)
-                        art.download()
-                        art.parse()
+                try:
+                    # Aumentamos para 20 resultados por combinação
+                    resultados = ddgs.text(query, region="br-pt", max_results=20)
+                    if not resultados: continue
 
-                        if len(art.text or "") < 150: continue
+                    for r in resultados:
+                        url = r.get("href")
+                        if not url or url in urls_vistas: continue
+                        urls_vistas.add(url)
 
-                        # PEGA AS COORDENADAS DO DICIONÁRIO
-                        lat, lon = COORD_CENTRAIS.get(uf, (None, None))
+                        try:
+                            art = Article(url, language="pt", config=config)
+                            art.download()
+                            art.parse()
 
-                        registro = {
-                            "titulo": art.title,
-                            "url": url,
-                            "municipio": extrair_municipio(art.text, uf),
-                            "uf": uf,
-                            "categoria": "Morte",
-                            "latitude": lat,   # <--- AGORA VAI PARA O BANCO
-                            "longitude": lon,  # <--- AGORA VAI PARA O BANCO
-                            "data_coleta": datetime.now(ZoneInfo(APP_TIMEZONE)),
-                            "data_publicacao": art.publish_date
-                        }
+                            texto_completo = (art.title + " " + art.text).lower()
+                            
+                            # Filtro básico de qualidade
+                            if len(art.text) < 200: continue
 
-                        if inserir_registro(registro):
-                            print(f"✅ Salvo [{uf}]: {art.title[:50]}...")
-                            time.sleep(0.5)
+                            # Coordenadas e Categoria
+                            lat, lon = COORD_CENTRAIS.get(uf, (-14.23, -51.92))
+                            cat = classificar_categoria(texto_completo)
 
-                    except:
-                        continue
-            except Exception as e:
-                print(f"⚠️ Erro ao buscar {uf}: {e}")
-                continue
+                            registro = {
+                                "titulo": art.title[:250],
+                                "url": url,
+                                "municipio": f"Busca Regional {uf}",
+                                "uf": uf,
+                                "categoria": cat,
+                                "latitude": lat,
+                                "longitude": lon,
+                                "data_coleta": datetime.now(ZoneInfo(APP_TIMEZONE)),
+                                "data_publicacao": art.publish_date
+                            }
 
-    print("✨ Coleta nacional finalizada.")
+                            if inserir_registro(registro):
+                                total_novos += 1
+                                print(f"✅ [{uf}] {art.title[:50]}...")
+                        
+                        except Exception:
+                            continue
+                    
+                    # Pausa estratégica para evitar bloqueio do pato (DuckDuckGo)
+                    time.sleep(random.uniform(1, 2))
+
+                except Exception as e:
+                    print(f"⚠️ Erro na busca {uf}: {e}")
+                    time.sleep(5)
+
+    print(f"✨ FIM. Total de novos registros nesta rodada: {total_novos}")
 
 if __name__ == "__main__":
     main()
