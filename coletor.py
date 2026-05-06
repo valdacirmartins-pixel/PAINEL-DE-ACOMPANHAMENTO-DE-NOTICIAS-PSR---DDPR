@@ -16,6 +16,15 @@ APP_TIMEZONE = "America/Sao_Paulo"
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
+COORD_ESTADOS = {
+    'AC': (-9.02, -70.81), 'AL': (-9.57, -36.78), 'AP': (0.03, -51.07), 'AM': (-3.41, -64.03),
+    'BA': (-12.51, -41.70), 'CE': (-5.20, -39.53), 'DF': (-15.80, -47.86), 'ES': (-19.18, -40.30),
+    'GO': (-15.82, -49.83), 'MA': (-4.96, -45.27), 'MT': (-12.68, -55.42), 'MS': (-20.77, -54.78),
+    'MG': (-18.51, -44.51), 'PA': (-1.99, -52.14), 'PB': (-7.23, -36.78), 'PR': (-24.89, -51.55),
+    'PE': (-8.81, -36.95), 'PI': (-7.71, -42.72), 'RJ': (-22.84, -43.15), 'RN': (-5.22, -36.52),
+    'RS': (-30.03, -51.21), 'RO': (-11.50, -63.58), 'RR': (2.73, -62.07), 'SC': (-27.24, -50.21),
+    'SP': (-23.55, -46.63), 'SE': (-10.57, -37.45), 'TO': (-10.17, -48.33)
+}
 # 1. LIGAÇÃO DIRETA: TERMOS DE BUSCA POR CATEGORIA
 # O robô usará cada um desses termos para cada UF
 DICIONARIO_BUSCA = {
@@ -112,14 +121,16 @@ def main():
 
                                 if len(art.text) < 150: continue
 
+                               lat, lon = COORD_ESTADOS.get(uf, (-14.23, -51.92))
+
                                 registro = {
                                     "titulo": art.title[:250],
                                     "url": link,
-                                    "municipio": f"Busca em {uf}",
+                                    "municipio": f"Região de {uf}",
                                     "uf": uf,
-                                    "categoria": categoria, # Categoria ligada diretamente ao termo
-                                    "latitude": lat,
-                                    "longitude": lon,
+                                    "categoria": cat,
+                                    "latitude": lat,   # Agora ele envia o número correto
+                                    "longitude": lon,  # Agora ele envia o número correto
                                     "data_coleta": datetime.now(ZoneInfo(APP_TIMEZONE)),
                                     "data_publicacao": art.publish_date
                                 }
