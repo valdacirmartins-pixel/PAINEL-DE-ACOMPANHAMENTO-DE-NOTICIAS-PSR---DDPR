@@ -16,6 +16,12 @@ APP_TIMEZONE = "America/Sao_Paulo"
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
+UFS_BRASIL = [
+    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
+    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
+    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+]
+
 COORD_ESTADOS = {
     'AC': (-9.02, -70.81), 'AL': (-9.57, -36.78), 'AP': (0.03, -51.07), 'AM': (-3.41, -64.03),
     'BA': (-12.51, -41.70), 'CE': (-5.20, -39.53), 'DF': (-15.80, -47.86), 'ES': (-19.18, -40.30),
@@ -25,8 +31,7 @@ COORD_ESTADOS = {
     'RS': (-30.03, -51.21), 'RO': (-11.50, -63.58), 'RR': (2.73, -62.07), 'SC': (-27.24, -50.21),
     'SP': (-23.55, -46.63), 'SE': (-10.57, -37.45), 'TO': (-10.17, -48.33)
 }
-# 1. LIGAÇÃO DIRETA: TERMOS DE BUSCA POR CATEGORIA
-# O robô usará cada um desses termos para cada UF
+
 DICIONARIO_BUSCA = {
     "Morte": [
         "morador de rua morto", "corpo de morador de rua encontrado", 
@@ -50,22 +55,6 @@ DICIONARIO_BUSCA = {
         "morador de rua atropelado", "atendimento médico morador de rua", 
         "consultório na rua", "morador de rua hipotermia frio"
     ]
-}
-
-UFS_BRASIL = [
-    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
-    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
-    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
-]
-
-COORD_ESTADOS = {
-    'AC': (-9.02, -70.81), 'AL': (-9.57, -36.78), 'AP': (0.03, -51.07), 'AM': (-3.41, -64.03),
-    'BA': (-12.51, -41.70), 'CE': (-5.20, -39.53), 'DF': (-15.80, -47.86), 'ES': (-19.18, -40.30),
-    'GO': (-15.82, -49.83), 'MA': (-4.96, -45.27), 'MT': (-12.68, -55.42), 'MS': (-20.77, -54.78),
-    'MG': (-18.51, -44.51), 'PA': (-1.99, -52.14), 'PB': (-7.23, -36.78), 'PR': (-24.89, -51.55),
-    'PE': (-8.81, -36.95), 'PI': (-7.71, -42.72), 'RJ': (-22.84, -43.15), 'RN': (-5.22, -36.52),
-    'RS': (-30.03, -51.21), 'RO': (-11.50, -63.58), 'RR': (2.73, -62.07), 'SC': (-27.24, -50.21),
-    'SP': (-23.55, -46.63), 'SE': (-10.57, -37.45), 'TO': (-10.17, -48.33)
 }
 
 config = Config()
@@ -96,16 +85,15 @@ def main():
 
     with DDGS() as ddgs:
         for uf in UFS_BRASIL:
-            lat, lon = COORD_ESTADOS[uf]
+            # Pegamos as coordenadas do estado no início do loop da UF
+            lat_fixa, lon_fixa = COORD_ESTADOS.get(uf, (-14.23, -51.92))
             
-            # Percorre cada categoria e cada termo ligado a ela
             for categoria, termos in DICIONARIO_BUSCA.items():
                 for termo_base in termos:
                     query = f"{termo_base} {uf}"
                     print(f"🔍 Buscando [{categoria}]: {query}")
                     
                     try:
-                        # Pegamos os top 15 de cada termo específico
                         resultados = ddgs.text(query, region="br-pt", max_results=15)
                         if not resultados: continue
 
@@ -121,27 +109,27 @@ def main():
 
                                 if len(art.text) < 150: continue
 
-                               lat, lon = COORD_ESTADOS.get(uf, (-14.23, -51.92))
-
+                                # Montagem do registro com a indentação corrigida
                                 registro = {
                                     "titulo": art.title[:250],
                                     "url": link,
-                                    "municipio": f"Região de {uf}",
+                                    "municipio": f"Área de {uf}", # Nome padronizado para o filtro
                                     "uf": uf,
-                                    "categoria": cat,
-                                    "latitude": lat,   # Agora ele envia o número correto
-                                    "longitude": lon,  # Agora ele envia o número correto
+                                    "categoria": categoria, # Corrigido: era 'cat' e agora é 'categoria'
+                                    "latitude": lat_fixa,
+                                    "longitude": lon_fixa,
                                     "data_coleta": datetime.now(ZoneInfo(APP_TIMEZONE)),
                                     "data_publicacao": art.publish_date
                                 }
 
                                 if salvar_no_banco(registro):
                                     total_sucesso += 1
-                                    print(f"   ✅ Novo registro: {art.title[:40]}")
+                                    print(f"    ✅ Novo registro: {art.title[:40]}")
                             
-                            except: continue
+                            except Exception:
+                                continue
                         
-                        # Pequena pausa para evitar bloqueio por IP
+                        # Pausa para evitar bloqueio
                         time.sleep(random.uniform(2, 4))
 
                     except Exception as e:
@@ -151,4 +139,12 @@ def main():
     print(f"🏁 Varredura completa. {total_sucesso} registros mapeados.")
 
 if __name__ == "__main__":
-    main()
+    # Loop infinito para o coletor não "dormir" no Railway
+    while True:
+        try:
+            main()
+            print("💤 Aguardando 6 horas para a próxima varredura...")
+            time.sleep(21600)
+        except Exception as e:
+            print(f"❌ Erro crítico no loop: {e}")
+            time.sleep(600)
