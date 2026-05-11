@@ -9,18 +9,23 @@ from newspaper import Article, Config
 from sqlalchemy import create_engine, text
 
 # ============================================================
-# CONFIGURAÇÃO DE VARREDURA EXAUSTIVA
+# CONFIGURAÇÃO DE VARREDURA EXAUSTIVA V2
 # ============================================================
 
 APP_TIMEZONE = "America/Sao_Paulo"
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
-UFS_BRASIL = [
-    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
-    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
-    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
-]
+# Dicionário para busca mais completa (Sigla: Nome Extenso)
+UFS_NOMES = {
+    'AC': 'Acre', 'AL': 'Alagoas', 'AP': 'Amapá', 'AM': 'Amazonas', 'BA': 'Bahia', 
+    'CE': 'Ceará', 'DF': 'Distrito Federal', 'ES': 'Espírito Santo', 'GO': 'Goiás', 
+    'MA': 'Maranhão', 'MT': 'Mato Grosso', 'MS': 'Mato Grosso do Sul', 'MG': 'Minas Gerais', 
+    'PA': 'Pará', 'PB': 'Paraíba', 'PR': 'Paraná', 'PE': 'Pernambuco', 'PI': 'Piauí', 
+    'RJ': 'Rio de Janeiro', 'RN': 'Rio Grande do Norte', 'RS': 'Rio Grande do Sul', 
+    'RO': 'Rondônia', 'RR': 'Roraima', 'SC': 'Santa Catarina', 'SP': 'São Paulo', 
+    'SE': 'Sergipe', 'TO': 'Tocantins'
+}
 
 COORD_ESTADOS = {
     'AC': (-9.02, -70.81), 'AL': (-9.57, -36.78), 'AP': (0.03, -51.07), 'AM': (-3.41, -64.03),
@@ -34,36 +39,30 @@ COORD_ESTADOS = {
 
 DICIONARIO_BUSCA = {
     "Morte": [
-        "morador de rua morto", "corpo de morador de rua encontrado", 
-        "homicídio pessoa em situação de rua", "óbito morador de rua hoje"
+        "morador de rua morto", "corpo encontrado situação de rua", 
+        "homicídio morador de rua", "pessoa sem teto falecida"
     ],
     "Violência": [
         "morador de rua espancado", "ataque a morador de rua", 
-        "pessoa em situação de rua esfaqueada", "violência contra morador de rua"
+        "violência contra população de rua", "agressão pessoa em situação de rua"
     ],
     "Impacto Positivo": [
-        "doação para moradores de rua", "projeto social situação de rua", 
-        "abrigo inaugurado morador de rua", "morador de rua consegue emprego",
-        "ação de solidariedade população de rua"
+        "doação moradores de rua", "projeto social população de rua", 
+        "acolhimento morador de rua", "solidariedade pessoas de rua"
     ],
     "Ação Política/Jurídica": [
-        "prefeitura morador de rua", "projeto de lei situação de rua", 
-        "decisão judicial morador de rua", "censo população de rua",
-        "política pública moradores de rua"
+        "prefeitura moradores de rua", "MPF população de rua", 
+        "decisão judicial morador de rua", "políticas públicas situação de rua"
     ],
     "Saúde/Acidente": [
-        "morador de rua atropelado", "atendimento médico morador de rua", 
-        "consultório na rua", "morador de rua hipotermia frio"
+        "atendimento médico morador de rua", "frio morador de rua", 
+        "hipotermia população de rua", "surto saúde situação de rua"
     ]
 }
 
 config = Config()
-config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0'
-config.request_timeout = 15
-
-# ============================================================
-# PROCESSAMENTO
-# ============================================================
+config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+config.request_timeout = 20
 
 def salvar_no_banco(dados):
     sql = """
@@ -74,27 +73,25 @@ def salvar_no_banco(dados):
     with engine.begin() as conn:
         return conn.execute(text(sql), dados).rowcount
 
-# ============================================================
-# LOOP DE VARREDURA CATEGORIZADA
-# ============================================================
-
 def main():
-    print("🛰️ INICIANDO VARREDURA POR LIGAÇÃO DIRETA (CATEGORIA x TERMO x UF)")
+    print(f"🛰️ INICIANDO VARREDURA EXAUSTIVA - {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     total_sucesso = 0
     urls_vistas = set()
 
     with DDGS() as ddgs:
-        for uf in UFS_BRASIL:
-            # Pegamos as coordenadas do estado no início do loop da UF
-            lat_fixa, lon_fixa = COORD_ESTADOS.get(uf, (-14.23, -51.92))
+        for uf, nome_extenso in UFS_NOMES.items():
+            lat_fixa, lon_fixa = COORD_ESTADOS.get(uf)
             
             for categoria, termos in DICIONARIO_BUSCA.items():
                 for termo_base in termos:
-                    query = f"{termo_base} {uf}"
-                    print(f"🔍 Buscando [{categoria}]: {query}")
+                    # Busca alternada entre Sigla e Nome do Estado para maximizar resultados
+                    query = f'"{termo_base}" {nome_extenso}' 
+                    print(f"🔍 [{categoria}] -> {query}")
                     
                     try:
-                        resultados = ddgs.text(query, region="br-pt", max_results=15)
+                        # timelimit='m' busca resultados do último mês (mais volume que 'd', mais atual que 'y')
+                        resultados = ddgs.text(query, region="br-pt", max_results=20, timelimit='m')
+                        
                         if not resultados: continue
 
                         for r in resultados:
@@ -107,15 +104,14 @@ def main():
                                 art.download()
                                 art.parse()
 
-                                if len(art.text) < 150: continue
+                                if len(art.text) < 200: continue
 
-                                # Montagem do registro com a indentação corrigida
                                 registro = {
                                     "titulo": art.title[:250],
                                     "url": link,
-                                    "municipio": f"Área de {uf}", # Nome padronizado para o filtro
+                                    "municipio": f"Área de {uf}",
                                     "uf": uf,
-                                    "categoria": categoria, # Corrigido: era 'cat' e agora é 'categoria'
+                                    "categoria": categoria,
                                     "latitude": lat_fixa,
                                     "longitude": lon_fixa,
                                     "data_coleta": datetime.now(ZoneInfo(APP_TIMEZONE)),
@@ -124,27 +120,27 @@ def main():
 
                                 if salvar_no_banco(registro):
                                     total_sucesso += 1
-                                    print(f"    ✅ Novo registro: {art.title[:40]}")
+                                    print(f"    ✅ Salvo: {art.title[:45]}...")
                             
                             except Exception:
                                 continue
                         
-                        # Pausa para evitar bloqueio
-                        time.sleep(random.uniform(2, 4))
+                        # Pausa dinâmica para evitar bloqueio do pato (DDG)
+                        time.sleep(random.uniform(3, 6))
 
                     except Exception as e:
-                        print(f"⚠️ Alerta na busca: {e}")
-                        time.sleep(10)
+                        print(f"⚠️ Erro na busca: {e}")
+                        time.sleep(15)
 
-    print(f"🏁 Varredura completa. {total_sucesso} registros mapeados.")
+    print(f"🏁 Fim da rodada. Sucesso: {total_sucesso} novos registros.")
 
 if __name__ == "__main__":
-    # Loop infinito para o coletor não "dormir" no Railway
     while True:
         try:
             main()
-            print("💤 Aguardando 6 horas para a próxima varredura...")
-            time.sleep(21600)
+            # Reduzi para 4 horas para manter o Dash sempre fresco
+            print("💤 Aguardando 4 horas...")
+            time.sleep(14400)
         except Exception as e:
-            print(f"❌ Erro crítico no loop: {e}")
+            print(f"❌ Erro no loop principal: {e}")
             time.sleep(600)
