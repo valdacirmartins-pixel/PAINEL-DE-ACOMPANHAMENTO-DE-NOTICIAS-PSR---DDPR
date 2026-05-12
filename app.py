@@ -184,7 +184,7 @@ def carregar_dados():
         return pd.DataFrame()
 
 # ============================================================
-# 6. LAYOUT DASH (PRINCIPAL)
+# 6. LAYOUT DASH (PRINCIPAL) - ATUALIZADO
 # ============================================================
 
 app.layout = html.Div([
@@ -194,15 +194,67 @@ app.layout = html.Div([
 
 def layout_dashboard():
     return html.Div([
-        html.H1("Dashboard Pop Rua"),
-        # Aqui entram seus componentes de filtros, gráficos e mapas
-        dcc.Graph(id='grafico-principal')
-    ], style={"padding": "20px"})
+        html.Div([
+            html.H1("Dashboard Pop Rua", style={'textAlign': 'center', 'color': '#1f2937'}),
+            html.P("Análise de notícias e dados coletados no MDHC", style={'textAlign': 'center', 'color': '#6b7280'}),
+        ], style={'padding': '20px', 'backgroundColor': '#ffffff', 'boxShadow': '0 2px 4px rgba(0,0,0,0.1)'}),
 
+        html.Div([
+            # Filtro Simples
+            html.Label("Selecione a Categoria:"),
+            dcc.Dropdown(
+                id='filtro-categoria',
+                options=[{'label': 'Todas', 'value': 'TODAS'}],
+                value='TODAS',
+                clearable=False,
+                style={'marginBottom': '20px'}
+            ),
+            
+            # O Gráfico que estava vazio
+            dcc.Graph(id='grafico-noticias-municipio')
+        ], style={'padding': '30px'})
+    ])
+
+# Callback para gerenciar as páginas
 @app.callback(Output('page-content', 'children'), [Input('url', 'pathname')])
 def display_page(pathname):
-    # Lógica simples de roteamento para o Dash
     return layout_dashboard()
 
-if __name__ == '__main__':
-    app.run_server(debug=False)
+# CALLBACK PRINCIPAL: Conecta o Banco de Dados ao Gráfico
+@app.callback(
+    [Output('grafico-noticias-municipio', 'figure'),
+     Output('filtro-categoria', 'options')],
+    [Input('filtro-categoria', 'value')]
+)
+def atualizar_grafico(categoria_selecionada):
+    df = carregar_dados()
+    
+    if df.empty:
+        # Retorna gráfico vazio com mensagem amigável
+        fig = px.bar(title="Nenhum dado encontrado no banco de dados.")
+        return fig, [{'label': 'Nenhuma categoria', 'value': 'TODAS'}]
+
+    # Prepara opções do filtro dinamicamente
+    categorias = df['categoria'].unique().tolist()
+    opcoes = [{'label': 'Todas as Categorias', 'value': 'TODAS'}] + \
+             [{'label': c, 'value': c} for c in categorias]
+
+    # Filtra os dados se necessário
+    if categoria_selecionada != 'TODAS':
+        df = df[df['categoria'] == categoria_selecionada]
+
+    # Cria o gráfico de barras por Município
+    contagem = df.groupby('municipio').size().reset_index(name='total')
+    fig = px.bar(
+        contagem, 
+        x='municipio', 
+        y='total',
+        title=f"Notícias por Município ({categoria_selecionada})",
+        labels={'municipio': 'Município', 'total': 'Qtd de Notícias'},
+        color='total',
+        color_continuous_scale='Blues'
+    )
+    
+    fig.update_layout(template='plotly_white', transition_duration=500)
+
+    return fig, opcoes
