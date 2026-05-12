@@ -2,36 +2,29 @@ import os
 import traceback
 from datetime import datetime
 from io import StringIO
-
 import dash
 from dash import dcc, html, Input, Output, State, dash_table
 from dash.exceptions import PreventUpdate
 from dash.dcc import send_data_frame
-
 import pandas as pd
 import plotly.express as px
-
 import folium
 from folium.plugins import MarkerCluster
-
 from flask import request, session, redirect, url_for, render_template_string
 from sqlalchemy import create_engine, text
-
 from gerenciador_usuarios import (
-    criar_tabelas_auth,
-    criar_admin_inicial,
-    autenticar_usuario,
-    validar_sessao,
-    encerrar_sessao,
-    listar_usuarios,
-    criar_usuario,
-    listar_logs_acesso,
-    ativar_usuario,
-    desativar_usuario,
-    resetar_senha,
+criar_tabelas_auth,
+criar_admin_inicial,
+autenticar_usuario,
+validar_sessao,
+encerrar_sessao,
+listar_usuarios,
+criar_usuario,
+listar_logs_acesso,
+ativar_usuario,
+desativar_usuario,
+resetar_senha,
 )
-
-
 # ============================================================
 # CONFIGURAÇÕES
 # ============================================================
