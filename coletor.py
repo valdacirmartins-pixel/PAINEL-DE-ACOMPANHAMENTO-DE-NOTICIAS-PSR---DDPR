@@ -1,150 +1,555 @@
 import os
+import re
 import time
 import random
+import unicodedata
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
+import pandas as pd
 from ddgs import DDGS
-from newspaper import Article, Config
+from newspaper import Article
+
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import SQLAlchemyError
+
 
 # ============================================================
-# CONFIGURAÇÃO DE VARREDURA EXAUSTIVA
+# CONFIGURAÇÕES
 # ============================================================
 
-APP_TIMEZONE = "America/Sao_Paulo"
 DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
-UFS_BRASIL = [
-    'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA',
-    'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN',
-    'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO'
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL não encontrada. "
+        "Configure essa variável de ambiente no Railway."
+    )
+
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True
+)
+
+URL_IBGE = (
+    "https://raw.githubusercontent.com/kelvins/"
+    "Municipios-Brasileiros/master/csv/municipios.csv"
+)
+
+QUERIES = [
+    "morador de rua morto",
+    "morador de rua morreu",
+    "sem teto morto",
+    "assassinato morador de rua",
+    "violência contra morador de rua",
+    "morador em situação de rua morto",
+    "pessoa em situação de rua morta",
+    "morador de rua agredido",
+    "morador de rua atropelado",
 ]
 
-COORD_ESTADOS = {
-    'AC': (-9.02, -70.81), 'AL': (-9.57, -36.78), 'AP': (0.03, -51.07), 'AM': (-3.41, -64.03),
-    'BA': (-12.51, -41.70), 'CE': (-5.20, -39.53), 'DF': (-15.80, -47.86), 'ES': (-19.18, -40.30),
-    'GO': (-15.82, -49.83), 'MA': (-4.96, -45.27), 'MT': (-12.68, -55.42), 'MS': (-20.77, -54.78),
-    'MG': (-18.51, -44.51), 'PA': (-1.99, -52.14), 'PB': (-7.23, -36.78), 'PR': (-24.89, -51.55),
-    'PE': (-8.81, -36.95), 'PI': (-7.71, -42.72), 'RJ': (-22.84, -43.15), 'RN': (-5.22, -36.52),
-    'RS': (-30.03, -51.21), 'RO': (-11.50, -63.58), 'RR': (2.73, -62.07), 'SC': (-27.24, -50.21),
-    'SP': (-23.55, -46.63), 'SE': (-10.57, -37.45), 'TO': (-10.17, -48.33)
-}
-
-DICIONARIO_BUSCA = {
+CATEGORIAS = {
     "Morte": [
-        "morador de rua morto", "corpo de morador de rua encontrado", 
-        "homicídio pessoa em situação de rua", "óbito morador de rua hoje"
+        "morto",
+        "morta",
+        "morreu",
+        "óbito",
+        "obito",
+        "falecimento",
+        "morte",
+        "corpo encontrado",
+        "encontrado morto",
+        "encontrada morta",
     ],
     "Violência": [
-        "morador de rua espancado", "ataque a morador de rua", 
-        "pessoa em situação de rua esfaqueada", "violência contra morador de rua"
+        "assassinado",
+        "assassinada",
+        "agredido",
+        "agredida",
+        "espancado",
+        "espancada",
+        "violência",
+        "violencia",
+        "homicídio",
+        "homicidio",
+        "facada",
+        "tiro",
+        "queimado",
+        "queimada",
     ],
-    "Impacto Positivo": [
-        "doação para moradores de rua", "projeto social situação de rua", 
-        "abrigo inaugurado morador de rua", "morador de rua consegue emprego",
-        "ação de solidariedade população de rua"
+    "Acidente": [
+        "acidente",
+        "atropelado",
+        "atropelada",
+        "atropelamento",
     ],
-    "Ação Política/Jurídica": [
-        "prefeitura morador de rua", "projeto de lei situação de rua", 
-        "decisão judicial morador de rua", "censo população de rua",
-        "política pública moradores de rua"
-    ],
-    "Saúde/Acidente": [
-        "morador de rua atropelado", "atendimento médico morador de rua", 
-        "consultório na rua", "morador de rua hipotermia frio"
-    ]
+    "Outros": []
 }
 
-config = Config()
-config.browser_user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/124.0.0.0'
-config.request_timeout = 15
+MAPA_UF = {
+    11: "RO",
+    12: "AC",
+    13: "AM",
+    14: "RR",
+    15: "PA",
+    16: "AP",
+    17: "TO",
+    21: "MA",
+    22: "PI",
+    23: "CE",
+    24: "RN",
+    25: "PB",
+    26: "PE",
+    27: "AL",
+    28: "SE",
+    29: "BA",
+    31: "MG",
+    32: "ES",
+    33: "RJ",
+    35: "SP",
+    41: "PR",
+    42: "SC",
+    43: "RS",
+    50: "MS",
+    51: "MT",
+    52: "GO",
+    53: "DF",
+}
+
 
 # ============================================================
-# PROCESSAMENTO
+# NORMALIZAÇÃO DE TEXTO
 # ============================================================
 
-def salvar_no_banco(dados):
+def normalizar_texto(valor):
+    """
+    Normaliza texto para facilitar buscas:
+    - converte para minúsculo;
+    - remove acentos;
+    - remove espaços duplicados.
+    """
+    texto = str(valor or "").lower().strip()
+
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = "".join(
+        caractere
+        for caractere in texto
+        if not unicodedata.combining(caractere)
+    )
+
+    texto = re.sub(r"\s+", " ", texto)
+
+    return texto
+
+
+# ============================================================
+# BANCO DE DADOS
+# ============================================================
+
+def criar_tabela():
+    """
+    Cria a tabela principal caso ainda não exista.
+    A URL fica como UNIQUE para evitar notícia duplicada.
+    """
     sql = """
-    INSERT INTO pop_rua (titulo, url, municipio, uf, categoria, latitude, longitude, data_coleta, data_publicacao)
-    VALUES (:titulo, :url, :municipio, :uf, :categoria, :latitude, :longitude, :data_coleta, :data_publicacao)
+    CREATE TABLE IF NOT EXISTS pop_rua (
+        id SERIAL PRIMARY KEY,
+        titulo TEXT,
+        url TEXT UNIQUE,
+        municipio TEXT,
+        uf VARCHAR(2),
+        categoria TEXT,
+        latitude DOUBLE PRECISION,
+        longitude DOUBLE PRECISION,
+        data_coleta TIMESTAMP,
+        data_publicacao TIMESTAMP NULL,
+        query_origem TEXT,
+        criado_em TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS ix_pop_rua_municipio
+        ON pop_rua (municipio);
+
+    CREATE INDEX IF NOT EXISTS ix_pop_rua_uf
+        ON pop_rua (uf);
+
+    CREATE INDEX IF NOT EXISTS ix_pop_rua_categoria
+        ON pop_rua (categoria);
+
+    CREATE INDEX IF NOT EXISTS ix_pop_rua_data_coleta
+        ON pop_rua (data_coleta);
+    """
+
+    with engine.begin() as conn:
+        conn.execute(text(sql))
+
+
+def inserir_registro(registro):
+    """
+    Insere um registro na tabela pop_rua.
+    Caso a URL já exista, ignora.
+    """
+    sql = """
+    INSERT INTO pop_rua (
+        titulo,
+        url,
+        municipio,
+        uf,
+        categoria,
+        latitude,
+        longitude,
+        data_coleta,
+        data_publicacao,
+        query_origem
+    )
+    VALUES (
+        :titulo,
+        :url,
+        :municipio,
+        :uf,
+        :categoria,
+        :latitude,
+        :longitude,
+        :data_coleta,
+        :data_publicacao,
+        :query_origem
+    )
     ON CONFLICT (url) DO NOTHING;
     """
+
     with engine.begin() as conn:
-        return conn.execute(text(sql), dados).rowcount
+        result = conn.execute(text(sql), registro)
+        return result.rowcount
+
 
 # ============================================================
-# LOOP DE VARREDURA CATEGORIZADA
+# MUNICÍPIOS
+# ============================================================
+
+def carregar_municipios():
+    """
+    Carrega base pública de municípios brasileiros com latitude e longitude.
+    """
+    print("📍 Carregando base de municípios do IBGE/GitHub...")
+
+    df_municipios = pd.read_csv(URL_IBGE)
+
+    colunas_necessarias = {
+        "nome",
+        "latitude",
+        "longitude",
+        "codigo_uf"
+    }
+
+    colunas_faltando = colunas_necessarias - set(df_municipios.columns)
+
+    if colunas_faltando:
+        raise RuntimeError(
+            f"A base de municípios está sem as colunas: {colunas_faltando}"
+        )
+
+    df_municipios["nome_norm"] = df_municipios["nome"].apply(normalizar_texto)
+
+    coords_local = {}
+
+    for _, row in df_municipios.iterrows():
+        codigo_uf = int(row["codigo_uf"])
+
+        municipio_norm = row["nome_norm"]
+
+        coords_local[municipio_norm] = {
+            "nome_original": row["nome"],
+            "latitude": float(row["latitude"]),
+            "longitude": float(row["longitude"]),
+            "uf": MAPA_UF.get(codigo_uf, "NI")
+        }
+
+    lista_local = sorted(
+        coords_local.keys(),
+        key=len,
+        reverse=True
+    )
+
+    print(f"✅ Municípios carregados: {len(lista_local)}")
+
+    return coords_local, lista_local
+
+
+# Carrega uma vez na inicialização do script.
+COORDS, LISTA_MUNICIPIOS = carregar_municipios()
+
+
+# ============================================================
+# DETECÇÃO DE MUNICÍPIO
+# ============================================================
+
+def detectar_municipio(texto):
+    """
+    Tenta encontrar o município dentro do título/texto da notícia.
+
+    A busca é normalizada para evitar problema com acentos:
+    São Paulo -> sao paulo
+    Brasília -> brasilia
+    """
+    texto_norm = normalizar_texto(texto)
+
+    for municipio_norm in LISTA_MUNICIPIOS:
+        padrao = rf"\b{re.escape(municipio_norm)}\b"
+
+        if re.search(padrao, texto_norm):
+            return municipio_norm
+
+    return None
+
+
+# ============================================================
+# CLASSIFICAÇÃO
+# ============================================================
+
+def classificar(texto):
+    """
+    Classifica a notícia com base em palavras-chave simples.
+    """
+    texto_norm = normalizar_texto(texto)
+
+    for categoria, palavras in CATEGORIAS.items():
+        if categoria == "Outros":
+            continue
+
+        for palavra in palavras:
+            palavra_norm = normalizar_texto(palavra)
+
+            if palavra_norm in texto_norm:
+                return categoria
+
+    return "Outros"
+
+
+# ============================================================
+# PROCESSAMENTO DE NOTÍCIA
+# ============================================================
+
+def processar_noticia(url, query_origem):
+    """
+    Baixa e processa uma notícia.
+    Retorna um dicionário pronto para inserir no banco.
+    """
+    try:
+        artigo = Article(
+            url,
+            language="pt",
+            request_timeout=10
+        )
+
+        artigo.download()
+        artigo.parse()
+
+        titulo = artigo.title or ""
+        texto = artigo.text or ""
+
+        if not titulo and not texto:
+            print(f"⚠️ Artigo sem título/texto: {url}")
+            return None
+
+        base = f" {titulo} {texto} "
+
+        municipio_norm = detectar_municipio(base)
+
+        if municipio_norm:
+            info = COORDS.get(municipio_norm)
+
+            municipio = str(info["nome_original"]).title()
+            uf = info["uf"]
+            latitude = info["latitude"]
+            longitude = info["longitude"]
+        else:
+            municipio = "Não identificado"
+            uf = "NI"
+            latitude = -14.2350
+            longitude = -51.9253
+
+        categoria = classificar(base)
+
+        # Pequeno deslocamento visual para evitar marcadores exatamente sobrepostos.
+        latitude = float(latitude) + random.uniform(-0.02, 0.02)
+        longitude = float(longitude) + random.uniform(-0.02, 0.02)
+
+        data_publicacao = artigo.publish_date
+
+        # Alguns sites retornam data com timezone. Para evitar erro no PostgreSQL,
+        # removemos o timezone mantendo o horário.
+        if data_publicacao is not None and data_publicacao.tzinfo is not None:
+            data_publicacao = data_publicacao.replace(tzinfo=None)
+
+        return {
+            "titulo": titulo.strip(),
+            "url": url,
+            "municipio": municipio,
+            "uf": uf,
+            "categoria": categoria,
+            "latitude": latitude,
+            "longitude": longitude,
+            "data_coleta": datetime.now(),
+            "data_publicacao": data_publicacao,
+            "query_origem": query_origem,
+        }
+
+    except Exception as e:
+        print(f"❌ Erro ao processar URL: {url}")
+        print(f"   Motivo: {e}")
+        return None
+
+
+# ============================================================
+# BUSCA DE URLS
+# ============================================================
+
+def buscar_urls():
+    """
+    Busca URLs no DuckDuckGo usando DDGS.
+    Retorna um dicionário:
+    {
+        url: query_origem
+    }
+    """
+    urls_encontradas = {}
+
+    print("🔎 Iniciando buscas...")
+
+    try:
+        with DDGS() as ddgs:
+            for query in QUERIES:
+                print(f"🔍 Buscando query: {query}")
+
+                try:
+                    resultados = ddgs.text(
+                        query,
+                        region="br-pt",
+                        max_results=50
+                    )
+
+                    for resultado in resultados:
+                        url = resultado.get("href")
+
+                        if not url:
+                            continue
+
+                        if url not in urls_encontradas:
+                            urls_encontradas[url] = query
+
+                except Exception as e:
+                    print(f"❌ Erro na busca da query: {query}")
+                    print(f"   Motivo: {e}")
+
+                time.sleep(random.uniform(1.0, 2.0))
+
+    except Exception as e:
+        print("❌ Erro geral ao iniciar DDGS.")
+        print(f"   Motivo: {e}")
+
+    print(f"✅ URLs únicas encontradas: {len(urls_encontradas)}")
+
+    return urls_encontradas
+
+
+# ============================================================
+# RESUMO NO BANCO
+# ============================================================
+
+def exibir_resumo_banco():
+    """
+    Exibe resumo simples da tabela após a coleta.
+    """
+    sql = """
+    SELECT
+        COUNT(*) AS total_registros,
+        COUNT(DISTINCT url) AS total_urls,
+        COUNT(DISTINCT municipio) AS total_municipios,
+        COUNT(DISTINCT categoria) AS total_categorias
+    FROM pop_rua;
+    """
+
+    try:
+        with engine.begin() as conn:
+            row = conn.execute(text(sql)).mappings().first()
+
+        print("========== RESUMO DO BANCO ==========")
+        print(f"Total registros: {row['total_registros']}")
+        print(f"Total URLs: {row['total_urls']}")
+        print(f"Total municípios: {row['total_municipios']}")
+        print(f"Total categorias: {row['total_categorias']}")
+
+    except Exception as e:
+        print(f"⚠️ Não foi possível exibir resumo do banco: {e}")
+
+
+# ============================================================
+# MAIN
 # ============================================================
 
 def main():
-    print("🛰️ INICIANDO VARREDURA POR LIGAÇÃO DIRETA (CATEGORIA x TERMO x UF)")
-    total_sucesso = 0
-    urls_vistas = set()
+    print("======================================")
+    print("🚀 INICIANDO COLETOR POP RUA")
+    print(f"⏰ Data/hora início: {datetime.now()}")
+    print("======================================")
 
-    with DDGS() as ddgs:
-        for uf in UFS_BRASIL:
-            # Pegamos as coordenadas do estado no início do loop da UF
-            lat_fixa, lon_fixa = COORD_ESTADOS.get(uf, (-14.23, -51.92))
-            
-            for categoria, termos in DICIONARIO_BUSCA.items():
-                for termo_base in termos:
-                    query = f"{termo_base} {uf}"
-                    print(f"🔍 Buscando [{categoria}]: {query}")
-                    
-                    try:
-                        resultados = ddgs.text(query, region="br-pt", max_results=15)
-                        if not resultados: continue
+    criar_tabela()
 
-                        for r in resultados:
-                            link = r.get("href")
-                            if not link or link in urls_vistas: continue
-                            urls_vistas.add(link)
+    urls = buscar_urls()
 
-                            try:
-                                art = Article(link, language="pt", config=config)
-                                art.download()
-                                art.parse()
+    if not urls:
+        print("⚠️ Nenhuma URL encontrada. Finalizando.")
+        return
 
-                                if len(art.text) < 150: continue
+    total_processadas = 0
+    total_inseridas = 0
+    total_duplicadas = 0
+    total_erros = 0
 
-                                # Montagem do registro com a indentação corrigida
-                                registro = {
-                                    "titulo": art.title[:250],
-                                    "url": link,
-                                    "municipio": f"Área de {uf}", # Nome padronizado para o filtro
-                                    "uf": uf,
-                                    "categoria": categoria, # Corrigido: era 'cat' e agora é 'categoria'
-                                    "latitude": lat_fixa,
-                                    "longitude": lon_fixa,
-                                    "data_coleta": datetime.now(ZoneInfo(APP_TIMEZONE)),
-                                    "data_publicacao": art.publish_date
-                                }
+    for indice, (url, query_origem) in enumerate(urls.items(), start=1):
+        print("--------------------------------------")
+        print(f"Processando {indice}/{len(urls)}")
+        print(f"URL: {url}")
 
-                                if salvar_no_banco(registro):
-                                    total_sucesso += 1
-                                    print(f"    ✅ Novo registro: {art.title[:40]}")
-                            
-                            except Exception:
-                                continue
-                        
-                        # Pausa para evitar bloqueio
-                        time.sleep(random.uniform(2, 4))
+        registro = processar_noticia(url, query_origem)
 
-                    except Exception as e:
-                        print(f"⚠️ Alerta na busca: {e}")
-                        time.sleep(10)
+        if not registro:
+            total_erros += 1
+            time.sleep(random.uniform(0.5, 1.5))
+            continue
 
-    print(f"🏁 Varredura completa. {total_sucesso} registros mapeados.")
+        total_processadas += 1
+
+        try:
+            inseriu = inserir_registro(registro)
+
+            if inseriu:
+                total_inseridas += 1
+                print(f"✅ Inserido: {registro['titulo'][:100]}")
+            else:
+                total_duplicadas += 1
+                print(f"🔁 Duplicado ignorado: {registro['titulo'][:100]}")
+
+        except SQLAlchemyError as e:
+            total_erros += 1
+            print("❌ Erro ao inserir no banco.")
+            print(f"   Motivo: {e}")
+
+        time.sleep(random.uniform(0.5, 1.5))
+
+    print("======================================")
+    print("📌 RESUMO DA EXECUÇÃO")
+    print("======================================")
+    print(f"URLs encontradas: {len(urls)}")
+    print(f"Notícias processadas: {total_processadas}")
+    print(f"Novos registros inseridos: {total_inseridas}")
+    print(f"Duplicados ignorados: {total_duplicadas}")
+    print(f"Erros: {total_erros}")
+    print(f"⏰ Data/hora fim: {datetime.now()}")
+
+    exibir_resumo_banco()
+
+    print("🚀 FINALIZADO")
+
 
 if __name__ == "__main__":
-    # Loop infinito para o coletor não "dormir" no Railway
-    while True:
-        try:
-            main()
-            print("💤 Aguardando 6 horas para a próxima varredura...")
-            time.sleep(21600)
-        except Exception as e:
-            print(f"❌ Erro crítico no loop: {e}")
-            time.sleep(600)
+    main()
