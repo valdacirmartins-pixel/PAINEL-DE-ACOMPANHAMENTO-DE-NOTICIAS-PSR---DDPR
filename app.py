@@ -32,8 +32,8 @@ resetar_senha,
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if not DATABASE_URL:
-    raise RuntimeError(
-        "DATABASE_URL não encontrada. Configure essa variável no Railway."
+raise RuntimeError(
+"DATABASE_URL não encontrada. Configure essa variável no Railway."
     )
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True)
