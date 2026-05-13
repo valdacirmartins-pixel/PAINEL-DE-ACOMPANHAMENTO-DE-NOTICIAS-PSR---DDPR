@@ -227,9 +227,10 @@ def inserir_registro(registro):
 
 def carregar_municipios():
     """
-    Carrega base pública de municípios brasileiros com latitude e longitude.
+    Carrega base pública de municípios brasileiros.
     """
-    print("📍 Carregando base de municípios do IBGE/GitHub...")
+
+    print("📍 Carregando base de municípios...")
 
     df_municipios = pd.read_csv(URL_IBGE)
 
@@ -244,20 +245,32 @@ def carregar_municipios():
 
     if colunas_faltando:
         raise RuntimeError(
-            f"A base de municípios está sem as colunas: {colunas_faltando}"
+            f"Base sem colunas: {colunas_faltando}"
         )
 
-    df_municipios["nome_norm"] = df_municipios["nome"].apply(normalizar_texto)
+    df_municipios["nome_norm"] = df_municipios["nome"].apply(
+        normalizar_texto
+    )
 
     coords_local = {}
 
     for _, row in df_municipios.iterrows():
+
         codigo_uf = int(row["codigo_uf"])
 
         municipio_norm = row["nome_norm"]
 
+        nome_original = str(row["nome"]).strip()
+
+        # Ignora regiões falsas
+        if (
+            nome_original.lower().startswith("área de")
+            or nome_original.lower().startswith("area de")
+        ):
+            continue
+
         coords_local[municipio_norm] = {
-            "nome_original": row["nome"],
+            "nome_original": nome_original,
             "latitude": float(row["latitude"]),
             "longitude": float(row["longitude"]),
             "uf": MAPA_UF.get(codigo_uf, "NI")
@@ -283,18 +296,21 @@ COORDS, LISTA_MUNICIPIOS = carregar_municipios()
 # ============================================================
 def detectar_municipio(titulo, texto):
     """
-    Detecta município priorizando o TÍTULO.
-    Só procura no texto se não encontrar no título.
+    Detecta município de forma segura.
     """
 
     titulo_norm = normalizar_texto(titulo)
     texto_norm = normalizar_texto(texto)
 
     # =====================================================
-    # 1. PRIORIDADE TOTAL PARA O TÍTULO
+    # PRIORIDADE NO TÍTULO
     # =====================================================
 
     for municipio_norm in LISTA_MUNICIPIOS:
+
+        # Ignora nomes muito pequenos
+        if len(municipio_norm) < 4:
+            continue
 
         padrao = rf"\b{re.escape(municipio_norm)}\b"
 
@@ -302,18 +318,21 @@ def detectar_municipio(titulo, texto):
             return municipio_norm
 
     # =====================================================
-    # 2. TEXTO COMPLETO (mais restritivo)
+    # TEXTO LIMITADO
     # =====================================================
 
-    primeiras_linhas = texto_norm[:3000]
+    trecho = texto_norm[:2500]
 
     for municipio_norm in LISTA_MUNICIPIOS:
 
+        if len(municipio_norm) < 4:
+            continue
+
         padrao = rf"\b{re.escape(municipio_norm)}\b"
 
-        ocorrencias = re.findall(padrao, primeiras_linhas)
+        ocorrencias = re.findall(padrao, trecho)
 
-        # Só aceita se aparecer mais de 1 vez
+        # exige repetição
         if len(ocorrencias) >= 2:
             return municipio_norm
 
@@ -348,10 +367,7 @@ def classificar(texto):
 # ============================================================
 
 def processar_noticia(url, query_origem):
-    """
-    Baixa e processa uma notícia.
-    Retorna um dicionário pronto para inserir no banco.
-    """
+
     try:
         artigo = Article(
             url,
@@ -366,39 +382,43 @@ def processar_noticia(url, query_origem):
         texto = artigo.text or ""
 
         if not titulo and not texto:
-            print(f"⚠️ Artigo sem título/texto: {url}")
+            print(f"⚠️ Artigo vazio: {url}")
             return None
 
-       municipio_norm = detectar_municipio(
-    titulo=titulo,
-    texto=texto
-)
+        base = f"{titulo} {texto}"
+
+        municipio_norm = detectar_municipio(
+            titulo=titulo,
+            texto=texto
+        )
 
         if municipio_norm:
+
             info = COORDS.get(municipio_norm)
 
             municipio = str(info["nome_original"]).title()
             uf = info["uf"]
             latitude = info["latitude"]
             longitude = info["longitude"]
+
         else:
-    municipio = "Não identificado"
+
+            municipio = "Não identificado"
             uf = "NI"
             latitude = None
             longitude = None
 
         categoria = classificar(base)
 
-        # Mantém coordenadas reais do município
-        latitude = float(latitude)
-        longitude = float(longitude)
-
         data_publicacao = artigo.publish_date
 
-        # Alguns sites retornam data com timezone. Para evitar erro no PostgreSQL,
-        # removemos o timezone mantendo o horário.
-        if data_publicacao is not None and data_publicacao.tzinfo is not None:
-            data_publicacao = data_publicacao.replace(tzinfo=None)
+        if (
+            data_publicacao is not None
+            and data_publicacao.tzinfo is not None
+        ):
+            data_publicacao = data_publicacao.replace(
+                tzinfo=None
+            )
 
         return {
             "titulo": titulo.strip(),
@@ -414,8 +434,10 @@ def processar_noticia(url, query_origem):
         }
 
     except Exception as e:
+
         print(f"❌ Erro ao processar URL: {url}")
-        print(f"   Motivo: {e}")
+        print(f"Motivo: {e}")
+
         return None
 
 
