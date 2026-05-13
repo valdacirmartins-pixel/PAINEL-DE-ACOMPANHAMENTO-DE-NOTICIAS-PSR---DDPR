@@ -1698,6 +1698,10 @@ def atualizar_dashboard(
 # MAPA
 # ============================================================
 
+# ============================================================
+# MAPA
+# ============================================================
+
 try:
 
     if df_filtrado.empty:
@@ -1725,143 +1729,40 @@ try:
 
     mapa_html = gerar_mapa(base_mapa)
 
-        # CATEGORIA
-        if df_filtrado.empty:
-            fig_categoria = criar_figura_vazia("Registros por categoria")
-        else:
-            df_categoria = (
-                df_filtrado
-                .groupby("categoria")
-                .size()
-                .reset_index(name="qtd")
-                .sort_values("qtd", ascending=True)
-            )
-
-            fig_categoria = px.bar(
-                df_categoria,
-                x="qtd",
-                y="categoria",
-                orientation="h",
-                title="Registros por categoria",
-                text="qtd"
-            )
-            fig_categoria.update_layout(
-                margin={"l": 20, "r": 20, "t": 50, "b": 20},
-                yaxis_title="",
-                xaxis_title="Quantidade"
-            )
-
-        # UF
-        if df_filtrado.empty:
-            fig_uf = criar_figura_vazia("Registros por UF")
-        else:
-            df_uf = (
-                df_filtrado
-                .groupby("uf")
-                .size()
-                .reset_index(name="qtd")
-                .sort_values("qtd", ascending=True)
-            )
-
-            fig_uf = px.bar(
-                df_uf,
-                x="qtd",
-                y="uf",
-                orientation="h",
-                title="Registros por UF",
-                text="qtd"
-            )
-            fig_uf.update_layout(
-                margin={"l": 20, "r": 20, "t": 50, "b": 20},
-                yaxis_title="",
-                xaxis_title="Quantidade"
-            )
-
-        # TEMPO
-        if df_filtrado.empty or df_filtrado["data"].dropna().empty:
-            fig_tempo = criar_figura_vazia("Evolução no tempo")
-        else:
-            df_tempo = df_filtrado.dropna(subset=["data"]).copy()
-            df_tempo["data_dia"] = pd.to_datetime(df_tempo["data"], errors="coerce").dt.date
-
-            df_tempo = (
-                df_tempo
-                .dropna(subset=["data_dia"])
-                .groupby("data_dia")
-                .size()
-                .reset_index(name="qtd")
-                .sort_values("data_dia")
-            )
-
-            fig_tempo = px.line(
-                df_tempo,
-                x="data_dia",
-                y="qtd",
-                title="Evolução no tempo",
-                markers=True
-            )
-            fig_tempo.update_layout(
-                margin={"l": 20, "r": 20, "t": 50, "b": 20},
-                xaxis_title="Data",
-                yaxis_title="Quantidade"
-            )
-
-        # TABELA
-        tabela_df = df_filtrado.copy()
-
-        if not tabela_df.empty:
-            tabela_df["data"] = pd.to_datetime(tabela_df["data"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
-            tabela_df = tabela_df[["data", "municipio", "uf", "categoria", "titulo", "url", "query_origem"]]
-        else:
-            tabela_df = pd.DataFrame(columns=["data", "municipio", "uf", "categoria", "titulo", "url", "query_origem"])
-
-        # CARDS
-        total_registros = len(df_filtrado)
-        total_municipios = df_filtrado["municipio"].nunique() if not df_filtrado.empty else 0
-        total_ufs = df_filtrado["uf"].nunique() if not df_filtrado.empty else 0
-        total_categorias = df_filtrado["categoria"].nunique() if not df_filtrado.empty else 0
-
-        cards = [
-            card_resumo("Total de registros", formatar_numero(total_registros)),
-            card_resumo("Municípios", formatar_numero(total_municipios)),
-            card_resumo("UFs", formatar_numero(total_ufs)),
-            card_resumo("Categorias", formatar_numero(total_categorias)),
-        ]
-
-        # INSIGHT
-        if df_filtrado.empty:
-            insight = "Sem dados para os filtros selecionados."
-        else:
-            top_municipio = df_filtrado.groupby("municipio").size().idxmax()
-            qtd_top_municipio = df_filtrado.groupby("municipio").size().max()
-
-            top_categoria = df_filtrado.groupby("categoria").size().idxmax()
-            qtd_top_categoria = df_filtrado.groupby("categoria").size().max()
-
-            insight = (
-                f"Principal município no filtro atual: {top_municipio} "
-                f"({formatar_numero(qtd_top_municipio)} registros). "
-                f"Principal categoria: {top_categoria} "
-                f"({formatar_numero(qtd_top_categoria)} registros)."
-            )
-
-        dados_filtrados = df_filtrado.to_json(date_format="iso", orient="split")
-
-        return (
-            mapa_html,
-            fig_categoria,
-            fig_uf,
-            fig_tempo,
-            tabela_df.to_dict("records"),
-            cards,
-            insight,
-            dados_filtrados
+    # CATEGORIA
+    if df_filtrado.empty:
+        fig_categoria = criar_figura_vazia("Registros por categoria")
+    else:
+        df_categoria = (
+            df_filtrado
+            .groupby("categoria")
+            .size()
+            .reset_index(name="qtd")
+            .sort_values("qtd", ascending=True)
         )
 
-    except PreventUpdate:
-        raise
-    except Exception as e:
-        log_erro("atualizar_dashboard", e)
+        fig_categoria = px.bar(
+            df_categoria,
+            x="qtd",
+            y="categoria",
+            orientation="h",
+            title="Registros por categoria",
+            text="qtd"
+        )
+
+        fig_categoria.update_layout(
+            margin={"l": 20, "r": 20, "t": 50, "b": 20},
+            yaxis_title="",
+            xaxis_title="Quantidade"
+        )
+
+    # resto do código aqui...
+
+except PreventUpdate:
+    raise
+
+except Exception as e:
+    log_erro("atualizar_dashboard", e)
 
         df_vazio = pd.DataFrame(columns=["data", "municipio", "uf", "categoria", "titulo", "url", "query_origem"])
 
