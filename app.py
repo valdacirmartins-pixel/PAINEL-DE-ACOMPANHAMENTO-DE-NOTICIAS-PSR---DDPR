@@ -1698,7 +1698,8 @@ def atualizar_dashboard(
 # MAPA
 # ============================================================
 
-    try:
+try:
+
     if df_filtrado.empty:
 
         base_mapa = pd.DataFrame(
