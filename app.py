@@ -857,12 +857,10 @@ def gerar_mapa(df):
 
         folium.CircleMarker(
             location=[latitude, longitude],
-            radius=max(8, min(int(quantidade) * 2, 35)),
-            popup=popup,
-            color="#dc2626",
-            fill=True,
-            fill_color="#ef4444",
-            fill_opacity=0.7
+            radius=5,
+            color="#2563eb",
+            fill_color="#3b82f6",
+            fill_opacity=0.55
         ).add_to(marker_cluster)
 
     # Salva HTML do mapa
@@ -1696,43 +1694,34 @@ def atualizar_dashboard(
             texto_busca=texto_busca
         )
 
-        # ============================================================
-        # MAPA
-        # ============================================================
+     # ============================================================
+# MAPA
+# ============================================================
 
-        if df_filtrado.empty:
+if df_filtrado.empty:
 
-            base_mapa = pd.DataFrame(
-                columns=[
-                    "municipio",
-                    "uf",
-                    "categoria",
-                    "latitude",
-                    "longitude",
-                    "quantidade"
-                ]
-            )
+    base_mapa = pd.DataFrame(
+        columns=[
+            "municipio",
+            "uf",
+            "categoria",
+            "latitude",
+            "longitude",
+            "quantidade"
+        ]
+    )
 
-        else:
+else:
 
-            # Agrupa SOMENTE por coordenada
-            base_mapa = (
-                df_filtrado
-                .dropna(subset=["latitude", "longitude"])
-                .groupby(
-                    ["latitude", "longitude"],
-                    as_index=False
-                )
-                .agg({
-                    "quantidade": "sum",
-                    "municipio": "first",
-                    "uf": "first"
-                })
-            )
+    # Mantém TODOS os registros individuais
+    # O MarkerCluster já faz agrupamento automático
+    base_mapa = (
+        df_filtrado
+        .dropna(subset=["latitude", "longitude"])
+        .copy()
+    )
 
-            base_mapa["categoria"] = "Ocorrências"
-
-        mapa_html = gerar_mapa(base_mapa)
+mapa_html = gerar_mapa(base_mapa)
 
         # CATEGORIA
         if df_filtrado.empty:
