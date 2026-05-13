@@ -814,43 +814,59 @@ def tratar_dataframe(df):
 # ============================================================
 
 def gerar_mapa(df):
+
     mapa = folium.Map(
         location=[-14.2350, -51.9253],
         zoom_start=4,
-        tiles="OpenStreetMap"
+        tiles="CartoDB positron"
     )
 
-    cluster = MarkerCluster().add_to(mapa)
+    # Se não houver dados
+    if df.empty:
+        mapa.save(ARQ_MAPA_HTML)
 
-    if not df.empty:
-        for _, row in df.iterrows():
-            latitude = row.get("latitude")
-            longitude = row.get("longitude")
+        with open(ARQ_MAPA_HTML, encoding="utf-8") as f:
+            return f.read()
 
-            if pd.isna(latitude) or pd.isna(longitude):
-                continue
+    # Cluster de marcadores
+    marker_cluster = MarkerCluster().add_to(mapa)
 
-            municipio = row.get("municipio", "Não identificado")
-            uf = row.get("uf", "NI")
-            categoria = row.get("categoria", "Outros")
-            quantidade = row.get("quantidade", 1)
+    # Adiciona os pontos no mapa
+    for _, row in df.iterrows():
 
-            popup = f"""
-            <b>Município:</b> {municipio}/{uf}<br>
-            <b>Categoria:</b> {categoria}<br>
-            <b>Quantidade:</b> {quantidade}
-            """
+        latitude = row.get("latitude")
+        longitude = row.get("longitude")
 
-            folium.CircleMarker(
-                location=[float(latitude), float(longitude)],
-                radius=min(float(quantidade) * 2.5, 18),
-                fill=True,
-                fill_opacity=0.7,
-                popup=folium.Popup(popup, max_width=300)
-            ).add_to(cluster)
+        # Ignora coordenadas inválidas
+        if pd.isna(latitude) or pd.isna(longitude):
+            continue
 
+        municipio = row.get("municipio", "Não identificado")
+        uf = row.get("uf", "NI")
+        categoria = row.get("categoria", "Outros")
+        quantidade = row.get("quantidade", 1)
+
+        popup = f"""
+        <b>Município:</b> {municipio}<br>
+        <b>UF:</b> {uf}<br>
+        <b>Categoria:</b> {categoria}<br>
+        <b>Quantidade:</b> {quantidade}
+        """
+
+        folium.CircleMarker(
+            location=[latitude, longitude],
+            radius=max(6, min(int(quantidade), 20)),
+            popup=popup,
+            color="#dc2626",
+            fill=True,
+            fill_color="#ef4444",
+            fill_opacity=0.7
+        ).add_to(marker_cluster)
+
+    # Salva HTML do mapa
     mapa.save(ARQ_MAPA_HTML)
 
+    # Retorna HTML
     with open(ARQ_MAPA_HTML, encoding="utf-8") as f:
         return f.read()
 
