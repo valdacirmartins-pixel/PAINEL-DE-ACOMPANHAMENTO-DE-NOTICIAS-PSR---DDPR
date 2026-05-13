@@ -281,21 +281,40 @@ COORDS, LISTA_MUNICIPIOS = carregar_municipios()
 # ============================================================
 # DETECÇÃO DE MUNICÍPIO
 # ============================================================
-
-def detectar_municipio(texto):
+def detectar_municipio(titulo, texto):
     """
-    Tenta encontrar o município dentro do título/texto da notícia.
-
-    A busca é normalizada para evitar problema com acentos:
-    São Paulo -> sao paulo
-    Brasília -> brasilia
+    Detecta município priorizando o TÍTULO.
+    Só procura no texto se não encontrar no título.
     """
+
+    titulo_norm = normalizar_texto(titulo)
     texto_norm = normalizar_texto(texto)
 
+    # =====================================================
+    # 1. PRIORIDADE TOTAL PARA O TÍTULO
+    # =====================================================
+
     for municipio_norm in LISTA_MUNICIPIOS:
+
         padrao = rf"\b{re.escape(municipio_norm)}\b"
 
-        if re.search(padrao, texto_norm):
+        if re.search(padrao, titulo_norm):
+            return municipio_norm
+
+    # =====================================================
+    # 2. TEXTO COMPLETO (mais restritivo)
+    # =====================================================
+
+    primeiras_linhas = texto_norm[:3000]
+
+    for municipio_norm in LISTA_MUNICIPIOS:
+
+        padrao = rf"\b{re.escape(municipio_norm)}\b"
+
+        ocorrencias = re.findall(padrao, primeiras_linhas)
+
+        # Só aceita se aparecer mais de 1 vez
+        if len(ocorrencias) >= 2:
             return municipio_norm
 
     return None
@@ -350,9 +369,10 @@ def processar_noticia(url, query_origem):
             print(f"⚠️ Artigo sem título/texto: {url}")
             return None
 
-        base = f" {titulo} {texto} "
-
-        municipio_norm = detectar_municipio(base)
+       municipio_norm = detectar_municipio(
+    titulo=titulo,
+    texto=texto
+)
 
         if municipio_norm:
             info = COORDS.get(municipio_norm)
@@ -362,10 +382,10 @@ def processar_noticia(url, query_origem):
             latitude = info["latitude"]
             longitude = info["longitude"]
         else:
-            municipio = "Não identificado"
+    municipio = "Não identificado"
             uf = "NI"
-            latitude = -14.2350
-            longitude = -51.9253
+            latitude = None
+            longitude = None
 
         categoria = classificar(base)
 
