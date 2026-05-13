@@ -45,6 +45,16 @@ QUERIES = [
     "pessoa em situação de rua morta",
     "morador de rua agredido",
     "morador de rua atropelado",
+    "morador de rua encontrado morto",
+    "homem em situação de rua morto",
+    "mulher em situação de rua morta",
+    "morador de rua espancado",
+    "morador de rua incendiado",
+    "pessoa em situação de rua agredida",
+    "sem teto assassinado",
+    "morador de rua vítima",
+    "morador de rua esfaqueado",
+    "morador de rua baleado",
 ]
 
 CATEGORIAS = {
@@ -224,57 +234,44 @@ def inserir_registro(registro):
 # ============================================================
 # MUNICÍPIOS
 # ============================================================
-
 def carregar_municipios():
-    """
-    Carrega base pública de municípios brasileiros.
-    """
 
-    print("📍 Carregando base de municípios...")
+    print("📍 Carregando base de municípios do IBGE/GitHub...")
 
     df_municipios = pd.read_csv(URL_IBGE)
 
-    colunas_necessarias = {
-        "nome",
-        "latitude",
-        "longitude",
-        "codigo_uf"
-    }
-
-    colunas_faltando = colunas_necessarias - set(df_municipios.columns)
-
-    if colunas_faltando:
-        raise RuntimeError(
-            f"Base sem colunas: {colunas_faltando}"
-        )
-
-    df_municipios["nome_norm"] = df_municipios["nome"].apply(
-        normalizar_texto
+    df_municipios["nome_norm"] = (
+        df_municipios["nome"]
+        .astype(str)
+        .apply(normalizar_texto)
     )
 
     coords_local = {}
 
     for _, row in df_municipios.iterrows():
 
-        codigo_uf = int(row["codigo_uf"])
+        try:
+            codigo_uf = int(row["codigo_uf"])
 
-        municipio_norm = row["nome_norm"]
+            municipio_norm = row["nome_norm"]
 
-        nome_original = str(row["nome"]).strip()
+            nome_original = str(row["nome"]).strip()
 
-        # Ignora regiões falsas
-        if (
-            nome_original.lower().startswith("área de")
-            or nome_original.lower().startswith("area de")
-        ):
+            if (
+                nome_original.lower().startswith("área de")
+                or nome_original.lower().startswith("area de")
+            ):
+                continue
+
+            coords_local[municipio_norm] = {
+                "nome_original": nome_original,
+                "latitude": float(row["latitude"]),
+                "longitude": float(row["longitude"]),
+                "uf": MAPA_UF.get(codigo_uf, "NI")
+            }
+
+        except Exception:
             continue
-
-        coords_local[municipio_norm] = {
-            "nome_original": nome_original,
-            "latitude": float(row["latitude"]),
-            "longitude": float(row["longitude"]),
-            "uf": MAPA_UF.get(codigo_uf, "NI")
-        }
 
     lista_local = sorted(
         coords_local.keys(),
@@ -408,7 +405,7 @@ def processar_noticia(url, query_origem):
             latitude = None
             longitude = None
 
-        categoria = classificar(base)
+        categoria = classificar(texto)
 
         data_publicacao = artigo.publish_date
 
@@ -466,7 +463,7 @@ def buscar_urls():
                     resultados = ddgs.text(
                         query,
                         region="br-pt",
-                        max_results=50
+                        max_results=200
                     )
 
                     for resultado in resultados:
