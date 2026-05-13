@@ -817,7 +817,7 @@ def gerar_mapa(df):
 
     mapa = folium.Map(
         location=[-14.2350, -51.9253],
-        zoom_start=4,
+        zoom_start=5,
         tiles="CartoDB positron"
     )
 
@@ -855,7 +855,7 @@ def gerar_mapa(df):
 
         folium.CircleMarker(
             location=[latitude, longitude],
-            radius=max(6, min(int(quantidade), 20)),
+            radius=max(8, min(int(quantidade) * 2, 35)),
             popup=popup,
             color="#dc2626",
             fill=True,
@@ -1700,14 +1700,17 @@ def atualizar_dashboard(
                 columns=["municipio", "uf", "categoria", "latitude", "longitude", "quantidade"]
             )
         else:
-            base_mapa = (
-                df_filtrado
-                .dropna(subset=["latitude", "longitude"])
-                .groupby(["municipio", "uf", "categoria", "latitude", "longitude"], as_index=False)["quantidade"]
-                .sum()
-            )
+           base_mapa = (
+    df_filtrado
+    .dropna(subset=["latitude", "longitude"])
+    .groupby(
+        ["municipio", "uf", "latitude", "longitude"],
+        as_index=False
+    )["quantidade"]
+    .sum()
+)
 
-        mapa_html = gerar_mapa(base_mapa)
+base_mapa["categoria"] = "Ocorrências"
 
         # CATEGORIA
         if df_filtrado.empty:
