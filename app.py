@@ -1694,21 +1694,21 @@ def atualizar_dashboard(
             texto_busca=texto_busca
         )
 
-     # ============================================================
+# ============================================================
 # MAPA
 # ============================================================
 
-if df_filtrado.empty:
+    if df_filtrado.empty:
 
-    base_mapa = pd.DataFrame(
-        columns=[
-            "municipio",
-            "uf",
-            "categoria",
-            "latitude",
-            "longitude",
-            "quantidade"
-        ]
+        base_mapa = pd.DataFrame(
+            columns=[
+                "municipio",
+                "uf",
+                "categoria",
+                "latitude",
+                "longitude",
+                "quantidade"
+            ]
     )
 
 else:
