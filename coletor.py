@@ -369,9 +369,9 @@ def processar_noticia(url, query_origem):
 
         categoria = classificar(base)
 
-        # Pequeno deslocamento visual para evitar marcadores exatamente sobrepostos.
-        latitude = float(latitude) + random.uniform(-0.02, 0.02)
-        longitude = float(longitude) + random.uniform(-0.02, 0.02)
+        # Mantém coordenadas reais do município
+        latitude = float(latitude)
+        longitude = float(longitude)
 
         data_publicacao = artigo.publish_date
 
