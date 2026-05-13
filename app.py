@@ -1109,7 +1109,7 @@ def layout_dashboard(usuario):
                                 style={"margin": "0", "fontSize": "30px", "color": "#1f2937"}
                             ),
                             html.P(
-                                "Monitoramento de notícias e óbitos",
+                                "Monitoramento de notícias PSR",
                                 style={"margin": "8px 0 0 0", "color": "#6b7280", "fontSize": "15px"}
                             )
                         ]
