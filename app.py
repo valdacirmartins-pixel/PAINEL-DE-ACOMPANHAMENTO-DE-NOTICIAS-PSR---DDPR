@@ -830,7 +830,7 @@ def gerar_mapa(df):
 
     # Cluster de marcadores
     marker_cluster = MarkerCluster(
-         disableClusteringAtZoom=10
+        disableClusteringAtZoom=10
     ).add_to(mapa)
 
     # Adiciona os pontos no mapa
@@ -1696,45 +1696,43 @@ def atualizar_dashboard(
             texto_busca=texto_busca
         )
 
-# ============================================================
-# MAPA
-# ============================================================
+        # ============================================================
+        # MAPA
+        # ============================================================
 
-if df_filtrado.empty:
+        if df_filtrado.empty:
 
-    base_mapa = pd.DataFrame(
-        columns=[
-            "municipio",
-            "uf",
-            "categoria",
-            "latitude",
-            "longitude",
-            "quantidade"
-        ]
-    )
+            base_mapa = pd.DataFrame(
+                columns=[
+                    "municipio",
+                    "uf",
+                    "categoria",
+                    "latitude",
+                    "longitude",
+                    "quantidade"
+                ]
+            )
 
-else:
+        else:
 
-    # Agrupa SOMENTE por coordenada
-    # Isso evita sobreposição e aumenta os pontos no mapa
-    base_mapa = (
-        df_filtrado
-        .dropna(subset=["latitude", "longitude"])
-        .groupby(
-            ["latitude", "longitude"],
-            as_index=False
-        )
-        .agg({
-            "quantidade": "sum",
-            "municipio": "first",
-            "uf": "first"
-        })
-    )
+            # Agrupa SOMENTE por coordenada
+            base_mapa = (
+                df_filtrado
+                .dropna(subset=["latitude", "longitude"])
+                .groupby(
+                    ["latitude", "longitude"],
+                    as_index=False
+                )
+                .agg({
+                    "quantidade": "sum",
+                    "municipio": "first",
+                    "uf": "first"
+                })
+            )
 
-    # Categoria única visual
-    base_mapa["categoria"] = "Ocorrências"
+            base_mapa["categoria"] = "Ocorrências"
 
-mapa_html = gerar_mapa(base_mapa)
+        mapa_html = gerar_mapa(base_mapa)
 
         # CATEGORIA
         if df_filtrado.empty:
