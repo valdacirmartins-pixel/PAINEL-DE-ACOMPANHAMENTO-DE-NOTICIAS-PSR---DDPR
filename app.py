@@ -1799,102 +1799,143 @@ def atualizar_dashboard(
 
         mapa_html = gerar_mapa(base_mapa)
 
-        # CATEGORIA
-        if df_filtrado.empty:
-            fig_categoria = criar_figura_vazia("Registros por categoria")
-        else:
-            df_categoria = (
-                df_filtrado
-                .groupby("categoria")
-                .size()
-                .reset_index(name="qtd")
-                .sort_values("qtd", ascending=True)
-            )
+# ============================================================
+# CATEGORIA
+# ============================================================
 
-           fig_categoria = px.pie(
-                df_categoria,
-                values="qtd",
-                names="categoria",
-                title="Distribuição por categoria",
-                hole=0.55
-            )
+if df_filtrado.empty:
+    fig_categoria = criar_figura_vazia("Distribuição por categoria")
+else:
+    df_categoria = (
+        df_filtrado
+        .groupby("categoria")
+        .size()
+        .reset_index(name="qtd")
+        .sort_values("qtd", ascending=False)
+    )
 
-            fig_categoria.update_traces(
-                textposition="inside",
-                textinfo="percent+label"
-            )
+    fig_categoria = px.pie(
+        df_categoria,
+        values="qtd",
+        names="categoria",
+        title="Distribuição por categoria",
+        hole=0.55
+    )
 
-            fig_categoria.update_layout(
-                margin={"l": 10, "r": 10, "t": 50, "b": 10},
-                paper_bgcolor="white",
-                plot_bgcolor="white",
-                font={"color": "#374151"},
-                legend_title="Categorias"
-            )
-        # UF
-        if df_filtrado.empty:
-            fig_uf = criar_figura_vazia("Registros por UF")
-        else:
-            df_uf = (
-                df_filtrado
-                .groupby("uf")
-                .size()
-                .reset_index(name="qtd")
-                .sort_values("qtd", ascending=True)
-            )
+    fig_categoria.update_traces(
+        textposition="inside",
+        textinfo="percent+label"
+    )
 
-            fig_uf = px.bar(
-                df_uf,
-                x="qtd",
-                y="uf",
-                orientation="h",
-                title="Registros por UF",
-                text="qtd",
-                color="qtd",
-                color_continuous_scale="Blues"
-            )
+    fig_categoria.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font={"family": "Arial", "color": "#374151"},
+        title={
+            "x": 0.02,
+            "xanchor": "left",
+            "font": {"size": 20}
+        },
+        margin={"l": 10, "r": 10, "t": 60, "b": 10},
+        legend_title="Categorias"
+    )
 
-            fig_uf.update_traces(
-            textposition="outside"
-            )
 
-            fig_uf = estilizar_grafico(fig_uf)
-                fig_uf.update_layout(
-                    margin={"l": 20, "r": 20, "t": 50, "b": 20},
-                    yaxis_title="",
-                    xaxis_title="Quantidade"
-            )
+# ============================================================
+# UF
+# ============================================================
 
-        # TEMPO
-        if df_filtrado.empty or df_filtrado["data"].dropna().empty:
-            fig_tempo = criar_figura_vazia("Evolução no tempo")
-        else:
-            df_tempo = df_filtrado.dropna(subset=["data"]).copy()
-            df_tempo["data_dia"] = pd.to_datetime(df_tempo["data"], errors="coerce").dt.date
+if df_filtrado.empty:
+    fig_uf = criar_figura_vazia("Registros por UF")
+else:
+    df_uf = (
+        df_filtrado
+        .groupby("uf")
+        .size()
+        .reset_index(name="qtd")
+        .sort_values("qtd", ascending=True)
+    )
 
-            df_tempo = (
-                df_tempo
-                .dropna(subset=["data_dia"])
-                .groupby("data_dia")
-                .size()
-                .reset_index(name="qtd")
-                .sort_values("data_dia")
-            )
+    fig_uf = px.bar(
+        df_uf,
+        x="qtd",
+        y="uf",
+        orientation="h",
+        title="Registros por UF",
+        text="qtd",
+        color="qtd",
+        color_continuous_scale="Blues"
+    )
 
-            fig_tempo = px.area(
-    df_tempo,
-    x="data_dia",
-    y="qtd",
-    title="Evolução temporal",
-    markers=True
-)
+    fig_uf.update_traces(
+        textposition="outside"
+    )
 
-fig_tempo.update_traces(
-    line=dict(width=3),
-    mode="lines+markers"
-)
+    fig_uf.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font={"family": "Arial", "color": "#374151"},
+        title={
+            "x": 0.02,
+            "xanchor": "left",
+            "font": {"size": 20}
+        },
+        margin={"l": 20, "r": 20, "t": 60, "b": 20},
+        yaxis_title="",
+        xaxis_title="Quantidade",
+        coloraxis_showscale=False
+    )
 
-fig_tempo = estilizar_grafico(fig_tempo)
+
+# ============================================================
+# EVOLUÇÃO TEMPORAL
+# ============================================================
+
+if df_filtrado.empty or df_filtrado["data"].dropna().empty:
+    fig_tempo = criar_figura_vazia("Evolução temporal")
+else:
+    df_tempo = df_filtrado.dropna(subset=["data"]).copy()
+
+    df_tempo["data_dia"] = (
+        pd.to_datetime(df_tempo["data"], errors="coerce").dt.date
+    )
+
+    df_tempo = (
+        df_tempo
+        .dropna(subset=["data_dia"])
+        .groupby("data_dia")
+        .size()
+        .reset_index(name="qtd")
+        .sort_values("data_dia")
+    )
+
+    fig_tempo = px.area(
+        df_tempo,
+        x="data_dia",
+        y="qtd",
+        title="Evolução temporal",
+        markers=True
+    )
+
+    fig_tempo.update_traces(
+        line=dict(width=3),
+        mode="lines+markers"
+    )
+
+    fig_tempo.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font={"family": "Arial", "color": "#374151"},
+        title={
+            "x": 0.02,
+            "xanchor": "left",
+            "font": {"size": 20}
+        },
+        margin={"l": 20, "r": 20, "t": 60, "b": 20},
+        xaxis_title="Data",
+        yaxis_title="Quantidade",
+        hovermode="x unified"
+    )
 
         # TABELA
         tabela_df = df_filtrado.copy()
