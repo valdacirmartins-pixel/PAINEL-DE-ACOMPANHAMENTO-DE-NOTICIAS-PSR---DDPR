@@ -1705,20 +1705,26 @@ def atualizar_dashboard(
                 .sort_values("qtd", ascending=True)
             )
 
-            fig_categoria = px.bar(
+           fig_categoria = px.pie(
                 df_categoria,
-                x="qtd",
-                y="categoria",
-                orientation="h",
-                title="Registros por categoria",
-                text="qtd"
-            )
-            fig_categoria.update_layout(
-                margin={"l": 20, "r": 20, "t": 50, "b": 20},
-                yaxis_title="",
-                xaxis_title="Quantidade"
+                values="qtd",
+                names="categoria",
+                title="Distribuição por categoria",
+                hole=0.55
             )
 
+            fig_categoria.update_traces(
+                textposition="inside",
+                textinfo="percent+label"
+            )
+
+            fig_categoria.update_layout(
+                margin={"l": 10, "r": 10, "t": 50, "b": 10},
+                paper_bgcolor="white",
+                plot_bgcolor="white",
+                font={"color": "#374151"},
+                legend_title="Categorias"
+            )
         # UF
         if df_filtrado.empty:
             fig_uf = criar_figura_vazia("Registros por UF")
