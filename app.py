@@ -817,7 +817,7 @@ def gerar_mapa(df):
     mapa = folium.Map(
         location=[-14.2350, -51.9253],
         zoom_start=4,
-        tiles="OpenStreetMap"
+        ttiles="CartoDB positron"
     )
 
     cluster = MarkerCluster().add_to(mapa)
@@ -871,22 +871,92 @@ def criar_figura_vazia(titulo):
         ]
     )
     return fig
+def estilizar_grafico(fig):
+    fig.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="white",
 
+        font={
+            "family": "Arial",
+            "color": "#374151"
+        },
 
-def card_resumo(titulo, valor, subtitulo=None):
+        title={
+            "x": 0.02,
+            "xanchor": "left",
+            "font": {
+                "size": 20
+            }
+        },
+
+        margin={
+            "l": 20,
+            "r": 20,
+            "t": 60,
+            "b": 20
+        },
+
+        hoverlabel={
+            "bgcolor": "white",
+            "font_size": 13
+        }
+    )
+
+    fig.update_xaxes(
+        showgrid=True,
+        gridcolor="#f3f4f6"
+    )
+
+    fig.update_yaxes(
+        showgrid=True,
+        gridcolor="#f3f4f6"
+    )
+
+    return fig
+
+def card_resumo(titulo, valor, subtitulo=None, cor="#2563eb"):
     return html.Div(
         [
-            html.Div(titulo, style={"fontSize": "13px", "color": "#666", "marginBottom": "6px"}),
-            html.Div(valor, style={"fontSize": "26px", "fontWeight": "700", "color": "#222"}),
-            html.Div(subtitulo or "", style={"fontSize": "12px", "color": "#777", "marginTop": "4px"})
+            html.Div(
+                titulo,
+                style={
+                    "fontSize": "12px",
+                    "color": "#dbeafe",
+                    "marginBottom": "10px",
+                    "fontWeight": "600",
+                    "textTransform": "uppercase",
+                    "letterSpacing": "1px"
+                }
+            ),
+
+            html.Div(
+                valor,
+                style={
+                    "fontSize": "34px",
+                    "fontWeight": "800",
+                    "color": "white",
+                    "lineHeight": "1"
+                }
+            ),
+
+            html.Div(
+                subtitulo or "",
+                style={
+                    "fontSize": "13px",
+                    "color": "#bfdbfe",
+                    "marginTop": "10px"
+                }
+            )
         ],
+
         style={
-            "backgroundColor": "#ffffff",
-            "padding": "18px",
-            "borderRadius": "14px",
-            "boxShadow": "0 4px 14px rgba(0,0,0,0.08)",
-            "minWidth": "180px",
-            "flex": "1"
+            "background": f"linear-gradient(135deg, {cor}, #1e3a8a)",
+            "padding": "24px",
+            "borderRadius": "20px",
+            "boxShadow": "0 10px 30px rgba(37,99,235,0.25)",
+            "minWidth": "220px",
+            "flex": "1",
+            "transition": "0.2s"
         }
     )
 
@@ -1116,7 +1186,7 @@ def layout_dashboard(usuario):
         ],
         style={
             "padding": "26px",
-            "backgroundColor": "#f3f4f6",
+            "background": "linear-gradient(to bottom, #f8fafc, #eef2ff)",
             "minHeight": "100vh",
             "fontFamily": "Arial, sans-serif"
         }
@@ -1247,7 +1317,12 @@ def layout_tab_dashboard(perfil="usuario"):
                         }
                     )
                 ],
-                style={"display": "flex", "gap": "18px", "marginBottom": "22px"}
+                style={
+    "display": "grid",
+    "gridTemplateColumns": "1.2fr 1fr",
+    "gap": "18px",
+    "marginBottom": "22px"
+}tyle={"display": "flex", "gap": "18px", "marginBottom": "22px"}
             ),
 
             html.Div(
@@ -1311,7 +1386,22 @@ def layout_tab_dashboard(perfil="usuario"):
                             "maxWidth": "360px"
                         },
                         style_header={"fontWeight": "bold", "backgroundColor": "#f3f4f6", "color": "#111827"},
-                        style_data={"backgroundColor": "white", "color": "#374151"}
+                        style_data={
+    "backgroundColor": "white",
+    "color": "#374151"
+},
+
+style_data_conditional=[
+    {
+        "if": {"row_index": "odd"},
+        "backgroundColor": "#f9fafb"
+    },
+    {
+        "if": {"state": "active"},
+        "backgroundColor": "#dbeafe",
+        "border": "1px solid #2563eb"
+    }
+],
                     )
                 ],
                 style={
@@ -1743,12 +1833,20 @@ def atualizar_dashboard(
                 y="uf",
                 orientation="h",
                 title="Registros por UF",
-                text="qtd"
+                text="qtd",
+                color="qtd",
+                color_continuous_scale="Blues"
             )
-            fig_uf.update_layout(
-                margin={"l": 20, "r": 20, "t": 50, "b": 20},
-                yaxis_title="",
-                xaxis_title="Quantidade"
+
+            fig_uf.update_traces(
+            textposition="outside"
+            )
+
+            fig_uf = estilizar_grafico(fig_uf)
+                fig_uf.update_layout(
+                    margin={"l": 20, "r": 20, "t": 50, "b": 20},
+                    yaxis_title="",
+                    xaxis_title="Quantidade"
             )
 
         # TEMPO
@@ -1767,18 +1865,20 @@ def atualizar_dashboard(
                 .sort_values("data_dia")
             )
 
-            fig_tempo = px.line(
-                df_tempo,
-                x="data_dia",
-                y="qtd",
-                title="Evolução no tempo",
-                markers=True
-            )
-            fig_tempo.update_layout(
-                margin={"l": 20, "r": 20, "t": 50, "b": 20},
-                xaxis_title="Data",
-                yaxis_title="Quantidade"
-            )
+            fig_tempo = px.area(
+    df_tempo,
+    x="data_dia",
+    y="qtd",
+    title="Evolução temporal",
+    markers=True
+)
+
+fig_tempo.update_traces(
+    line=dict(width=3),
+    mode="lines+markers"
+)
+
+fig_tempo = estilizar_grafico(fig_tempo)
 
         # TABELA
         tabela_df = df_filtrado.copy()
