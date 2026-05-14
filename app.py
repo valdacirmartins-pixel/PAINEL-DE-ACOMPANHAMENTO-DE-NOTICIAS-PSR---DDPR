@@ -1698,37 +1698,6 @@ def atualizar_dashboard(
 # MAPA
 # ============================================================
 
-try:
-
-    if df_filtrado.empty:
-
-        base_mapa = pd.DataFrame(
-            columns=[
-                "municipio",
-                "uf",
-                "categoria",
-                "latitude",
-                "longitude",
-                "quantidade"
-            ]
-        )
-
-    else:
-
-        # Mantém TODOS os registros individuais
-        # O MarkerCluster já faz agrupamento automático
-        base_mapa = (
-            df_filtrado
-            .dropna(subset=["latitude", "longitude"])
-            .copy()
-        )
-
-    mapa_html = gerar_mapa(base_mapa)
-
-    # ============================================================
-    # CATEGORIA
-    # ============================================================
-
     if df_filtrado.empty:
 
         fig_categoria = criar_figura_vazia("Registros por categoria")
