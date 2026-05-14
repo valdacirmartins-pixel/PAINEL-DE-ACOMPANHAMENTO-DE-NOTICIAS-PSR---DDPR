@@ -871,6 +871,22 @@ def criar_figura_vazia(titulo):
         ]
     )
     return fig
+    def estilizar_grafico(fig):
+    fig.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font={"family": "Arial", "color": "#374151"},
+        title={
+            "x": 0.02,
+            "xanchor": "left",
+            "font": {"size": 20}
+        },
+        margin={"l": 20, "r": 20, "t": 60, "b": 20},
+        hovermode="x unified",
+        coloraxis_showscale=False
+    )
+
+    return fig
 def estilizar_grafico(fig):
     fig.update_layout(
         paper_bgcolor="white",
