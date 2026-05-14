@@ -1684,23 +1684,137 @@ def atualizar_dashboard(
             df = ler_json_dataframe(dados_base)
             df = tratar_dataframe(df)
 
-        df_filtrado = aplicar_filtros(
-            df=df,
-            ufs=ufs,
-            municipios=municipios,
-            categorias=categorias,
-            data_ini=data_ini,
-            data_fim=data_fim,
-            texto_busca=texto_busca
-        )
-        # ============================================================
-        # JSON FILTRADO
-        # ============================================================
+       df_filtrado = aplicar_filtros(
+    df=df,
+    ufs=ufs,
+    municipios=municipios,
+    categorias=categorias,
+    data_ini=data_ini,
+    data_fim=data_fim,
+    texto_busca=texto_busca
+)
 
-        dados_filtrados = df_filtrado.to_json(
-            date_format="iso",
-            orient="split"
-        )
+# ============================================================
+# MAPA
+# ============================================================
+
+mapa_html = gerar_mapa_html(df_filtrado)
+
+# ============================================================
+# CATEGORIA
+# ============================================================
+
+if df_filtrado.empty:
+
+    fig_categoria = criar_figura_vazia("Registros por categoria")
+
+else:
+
+    df_categoria = (
+        df_filtrado
+        .groupby("categoria")
+        .size()
+        .reset_index(name="qtd")
+        .sort_values("qtd", ascending=True)
+    )
+
+    fig_categoria = px.bar(
+        df_categoria,
+        x="qtd",
+        y="categoria",
+        orientation="h",
+        title="Registros por categoria",
+        text="qtd"
+    )
+
+# ============================================================
+# UF
+# ============================================================
+
+if df_filtrado.empty:
+
+    fig_uf = criar_figura_vazia("Registros por UF")
+
+else:
+
+    df_uf = (
+        df_filtrado
+        .groupby("uf")
+        .size()
+        .reset_index(name="qtd")
+        .sort_values("qtd", ascending=True)
+    )
+
+    fig_uf = px.bar(
+        df_uf,
+        x="qtd",
+        y="uf",
+        orientation="h",
+        title="Registros por UF",
+        text="qtd"
+    )
+
+# ============================================================
+# TEMPO
+# ============================================================
+
+if df_filtrado.empty:
+
+    fig_tempo = criar_figura_vazia("Evolução no tempo")
+
+else:
+
+    df_tempo = (
+        df_filtrado
+        .groupby("data")
+        .size()
+        .reset_index(name="qtd")
+    )
+
+    fig_tempo = px.line(
+        df_tempo,
+        x="data",
+        y="qtd",
+        title="Evolução no tempo"
+    )
+
+# ============================================================
+# TABELA
+# ============================================================
+
+tabela_df = df_filtrado.copy()
+
+# ============================================================
+# CARDS
+# ============================================================
+
+cards = [
+    card_resumo("Total de registros", str(len(df_filtrado))),
+    card_resumo("Municípios", str(df_filtrado["municipio"].nunique())),
+    card_resumo("UFs", str(df_filtrado["uf"].nunique())),
+    card_resumo("Categorias", str(df_filtrado["categoria"].nunique()))
+]
+
+# ============================================================
+# INSIGHT
+# ============================================================
+
+if df_filtrado.empty:
+
+    insight = "Sem dados para os filtros selecionados."
+
+else:
+
+    insight = f"Total filtrado: {len(df_filtrado)} registros."
+
+# ============================================================
+# JSON FILTRADO
+# ============================================================
+
+dados_filtrados = df_filtrado.to_json(
+    date_format="iso",
+    orient="split"
+)
 
         # ============================================================
         # RETURN
