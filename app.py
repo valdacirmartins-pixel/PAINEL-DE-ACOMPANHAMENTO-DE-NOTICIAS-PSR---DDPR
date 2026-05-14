@@ -1693,8 +1693,12 @@ def atualizar_dashboard(
             data_fim=data_fim,
             texto_busca=texto_busca
         )
+        # ============================================================
+        # JSON FILTRADO
+        # ============================================================
 
-# ============================================================
+        dados_filtrados = df_filtrado.to_json(
+            date_format="iso",
             orient="split"
         )
 
@@ -1747,7 +1751,6 @@ def atualizar_dashboard(
             mensagem_erro_usuario("atualizar dashboard", e),
             df_vazio.to_json(date_format="iso", orient="split")
         )
-
 # ============================================================
 # CALLBACK: EXPORTAR CSV
 # ============================================================
