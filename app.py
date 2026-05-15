@@ -873,7 +873,7 @@ def criar_figura_vazia(titulo):
     return fig
     
     
-    def estilizar_grafico(fig):
+   def estilizar_grafico(fig):
     fig.update_layout(
         paper_bgcolor="white",
         plot_bgcolor="white",
