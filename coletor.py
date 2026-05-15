@@ -36,25 +36,65 @@ URL_IBGE = (
 )
 
 QUERIES = [
+
     "morador de rua morto",
     "morador de rua morreu",
-    "sem teto morto",
-    "assassinato morador de rua",
-    "violência contra morador de rua",
-    "morador em situação de rua morto",
-    "pessoa em situação de rua morta",
+    "morador de rua assassinado",
     "morador de rua agredido",
+    "morador de rua espancado",
+    "morador de rua queimado",
+    "morador de rua incendiado",
+    "morador de rua baleado",
+    "morador de rua esfaqueado",
     "morador de rua atropelado",
     "morador de rua encontrado morto",
+
+    "pessoa em situação de rua morta",
+    "pessoa em situação de rua assassinada",
+    "pessoa em situação de rua agredida",
+    "pessoa em situação de rua baleada",
+
     "homem em situação de rua morto",
     "mulher em situação de rua morta",
-    "morador de rua espancado",
-    "morador de rua incendiado",
-    "pessoa em situação de rua agredida",
+
+    "sem teto morto",
     "sem teto assassinado",
+    "sem teto agredido",
+
+    "violência contra morador de rua",
+    "ataque contra morador de rua",
+    "crime contra morador de rua",
+
+    "população de rua morta",
+    "população em situação de rua",
+
+    "homicídio morador de rua",
     "morador de rua vítima",
-    "morador de rua esfaqueado",
-    "morador de rua baleado",
+    "morador de rua corpo encontrado",
+    "pessoa em situação de rua",
+    "morador de rua",
+    "moradora de rua",
+    "criança em situação de rua",
+    "jovem em situação de rua",
+    "homem em situação de rua",
+    "mulher em situação de rua", 
+    "sem teto",
+    "sem-teto",
+    "população em situação de rua",
+    "pessoas em situação de rua",
+    "CAIS",
+    "PAR CAIS",
+    "POPRUA",
+    "POP RUA",
+    "população em situação de rua",
+    "cidadãos em situação de rua",
+    "mengido",
+    "mendigos",
+    "pedinte",
+    "mendicância",
+    "moradores em situação de rua",
+    
+
 ]
 
 CATEGORIAS = {
@@ -330,7 +370,7 @@ def detectar_municipio(titulo, texto):
         ocorrencias = re.findall(padrao, trecho)
 
         # exige repetição
-        if len(ocorrencias) >= 2:
+        if len(ocorrencias) >= 1:
             return municipio_norm
 
     return None
@@ -439,53 +479,159 @@ def processar_noticia(url, query_origem):
 
 
 # ============================================================
-# BUSCA DE URLS
+# BUSCA DE URLS (VERSÃO TURBINADA)
 # ============================================================
 
 def buscar_urls():
     """
-    Busca URLs no DuckDuckGo usando DDGS.
-    Retorna um dicionário:
+    Busca URLs em larga escala usando:
+    - múltiplas queries;
+    - variações;
+    - períodos;
+    - DDGS;
+    - operadores extras.
+
+    Retorna:
     {
         url: query_origem
     }
     """
+
     urls_encontradas = {}
 
-    print("🔎 Iniciando buscas...")
+    print("🔎 INICIANDO BUSCAS AVANÇADAS...")
+
+    # ========================================================
+    # EXPANSÃO DE QUERIES
+    # ========================================================
+
+    queries_expandidas = []
+
+    anos = [
+        "2020",
+        "2021",
+        "2022",
+        "2023",
+        "2024",
+        "2025",
+        "2026",
+    ]
+
+    estados = [
+        "SP", "RJ", "MG", "BA", "PR", "RS",
+        "SC", "GO", "DF", "PE", "CE", "PA"
+    ]
+
+    termos_extra = [
+        "site:g1.globo.com",
+        "site:uol.com.br",
+        "site:cnnbrasil.com.br",
+        "site:terra.com.br",
+        "site:metropoles.com",
+        "site:band.uol.com.br",
+        "site:recordtv.r7.com",
+    ]
+
+    # ========================================================
+    # GERA COMBINAÇÕES
+    # ========================================================
+
+    for query in QUERIES:
+
+        queries_expandidas.append(query)
+
+        for ano in anos:
+            queries_expandidas.append(f"{query} {ano}")
+
+        for uf in estados:
+            queries_expandidas.append(f"{query} {uf}")
+
+        for termo in termos_extra:
+            queries_expandidas.append(f"{query} {termo}")
+
+        for ano in anos:
+            for uf in estados:
+                queries_expandidas.append(f"{query} {uf} {ano}")
+
+    # remove duplicadas
+    queries_expandidas = list(set(queries_expandidas))
+
+    print(f"📌 Total de queries expandidas: {len(queries_expandidas)}")
+
+    # ========================================================
+    # EXECUTA BUSCAS
+    # ========================================================
 
     try:
+
         with DDGS() as ddgs:
-            for query in QUERIES:
-                print(f"🔍 Buscando query: {query}")
+
+            for indice, query in enumerate(queries_expandidas, start=1):
+
+                print("------------------------------------------------")
+                print(f"🔍 Query {indice}/{len(queries_expandidas)}")
+                print(query)
 
                 try:
+
                     resultados = ddgs.text(
                         query,
                         region="br-pt",
-                        max_results=200
+                        safesearch="off",
+                        max_results=400
                     )
 
+                    contador_query = 0
+
                     for resultado in resultados:
+
                         url = resultado.get("href")
 
                         if not url:
                             continue
 
+                        # ignora PDFs
+                        if ".pdf" in url.lower():
+                            continue
+
+                        # ignora redes sociais
+                        if any(
+                            rede in url.lower()
+                            for rede in [
+                                "facebook",
+                                "instagram",
+                                "twitter",
+                                "x.com",
+                                "tiktok",
+                                "youtube"
+                            ]
+                        ):
+                            continue
+
                         if url not in urls_encontradas:
                             urls_encontradas[url] = query
+                            contador_query += 1
+
+                    print(f"✅ URLs novas nesta query: {contador_query}")
+                    print(f"📦 Total acumulado: {len(urls_encontradas)}")
 
                 except Exception as e:
-                    print(f"❌ Erro na busca da query: {query}")
-                    print(f"   Motivo: {e}")
 
-                time.sleep(random.uniform(1.0, 2.0))
+                    print(f"❌ Erro na query:")
+                    print(query)
+                    print(e)
+
+                # delay menor
+                time.sleep(random.uniform(0.2, 0.8))
 
     except Exception as e:
-        print("❌ Erro geral ao iniciar DDGS.")
-        print(f"   Motivo: {e}")
 
-    print(f"✅ URLs únicas encontradas: {len(urls_encontradas)}")
+        print("❌ Erro geral no DDGS")
+        print(e)
+
+    print("================================================")
+    print(f"✅ TOTAL FINAL DE URLS: {len(urls_encontradas)}")
+    print("================================================")
 
     return urls_encontradas
 
@@ -553,7 +699,7 @@ def main():
 
         if not registro:
             total_erros += 1
-            time.sleep(random.uniform(0.5, 1.5))
+            time.sleep(random.uniform(0.1, 0.4))
             continue
 
         total_processadas += 1
