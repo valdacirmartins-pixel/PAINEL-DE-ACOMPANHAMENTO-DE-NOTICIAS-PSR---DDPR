@@ -297,14 +297,19 @@ COORDS, LISTA_MUNICIPIOS = carregar_municipios()
 # DETECTAR MUNICÍPIO
 # ============================================================
 
-def detectar_municipio(titulo, texto):
+def detectar_municipio(titulo, texto, url=""):
 
     titulo_norm = normalizar_texto(titulo)
     texto_norm = normalizar_texto(texto)
+    url_norm = normalizar_texto(url)
+
+    # =====================================================
+    # PRIORIDADE 1 - TÍTULO
+    # =====================================================
 
     for municipio_norm in LISTA_MUNICIPIOS:
 
-        if len(municipio_norm) < 4:
+        if len(municipio_norm) < 3:
             continue
 
         padrao = rf"\b{re.escape(municipio_norm)}\b"
@@ -312,18 +317,34 @@ def detectar_municipio(titulo, texto):
         if re.search(padrao, titulo_norm):
             return municipio_norm
 
-    trecho = texto_norm[:4000]
+    # =====================================================
+    # PRIORIDADE 2 - URL
+    # =====================================================
 
     for municipio_norm in LISTA_MUNICIPIOS:
 
-        if len(municipio_norm) < 4:
+        if len(municipio_norm) < 3:
+            continue
+
+        municipio_url = municipio_norm.replace(" ", "-")
+
+        if municipio_url in url_norm:
+            return municipio_norm
+
+    # =====================================================
+    # PRIORIDADE 3 - TEXTO
+    # =====================================================
+
+    trecho = texto_norm[:8000]
+
+    for municipio_norm in LISTA_MUNICIPIOS:
+
+        if len(municipio_norm) < 3:
             continue
 
         padrao = rf"\b{re.escape(municipio_norm)}\b"
 
-        ocorrencias = re.findall(padrao, trecho)
-
-        if len(ocorrencias) >= 1:
+        if re.search(padrao, trecho):
             return municipio_norm
 
     return None
@@ -365,7 +386,7 @@ def processar_noticia(item):
         artigo = Article(
             url,
             language="pt",
-            request_timeout=8
+            request_timeout=15
         )
 
         artigo.download()
@@ -378,8 +399,9 @@ def processar_noticia(item):
             return None
 
         municipio_norm = detectar_municipio(
-            titulo=titulo,
-            texto=texto
+             titulo=titulo,
+             texto=texto,
+             url=url
         )
 
         if municipio_norm:
@@ -502,7 +524,7 @@ def buscar_urls():
                         query,
                         region="br-pt",
                         safesearch="off",
-                        max_results=300
+                        max_results=700
                     )
 
                     novos = 0
@@ -519,16 +541,10 @@ def buscar_urls():
                         if any(
                             lixo in url_lower
                             for lixo in [
-                                ".pdf",
-                                "facebook",
-                                "instagram",
-                                "twitter",
-                                "x.com",
-                                "youtube",
-                                "tiktok"
+                                 ".pdf"
                             ]
-                        ):
-                            continue
+                       ):
+                        continue
 
                         if url not in urls_encontradas:
                             urls_encontradas[url] = query
@@ -616,7 +632,7 @@ def main():
     print("⚡ PROCESSAMENTO MULTITHREAD")
     print("======================================")
 
-    with ThreadPoolExecutor(max_workers=30) as executor:
+    with ThreadPoolExecutor(max_workers=12) as executor:
 
         futures = {
             executor.submit(processar_noticia, item): item
