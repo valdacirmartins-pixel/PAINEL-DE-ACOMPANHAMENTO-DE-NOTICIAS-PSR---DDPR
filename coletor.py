@@ -4,6 +4,7 @@ import time
 import random
 import unicodedata
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 from ddgs import DDGS
@@ -27,7 +28,9 @@ if not DATABASE_URL:
 
 engine = create_engine(
     DATABASE_URL,
-    pool_pre_ping=True
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=30
 )
 
 URL_IBGE = (
@@ -71,30 +74,6 @@ QUERIES = [
     "homicídio morador de rua",
     "morador de rua vítima",
     "morador de rua corpo encontrado",
-    "pessoa em situação de rua",
-    "morador de rua",
-    "moradora de rua",
-    "criança em situação de rua",
-    "jovem em situação de rua",
-    "homem em situação de rua",
-    "mulher em situação de rua", 
-    "sem teto",
-    "sem-teto",
-    "população em situação de rua",
-    "pessoas em situação de rua",
-    "CAIS",
-    "PAR CAIS",
-    "POPRUA",
-    "POP RUA",
-    "população em situação de rua",
-    "cidadãos em situação de rua",
-    "mengido",
-    "mendigos",
-    "pedinte",
-    "mendicância",
-    "moradores em situação de rua",
-    
-
 ]
 
 CATEGORIAS = {
@@ -125,6 +104,8 @@ CATEGORIAS = {
         "tiro",
         "queimado",
         "queimada",
+        "baleado",
+        "esfaqueado",
     ],
     "Acidente": [
         "acidente",
@@ -167,23 +148,18 @@ MAPA_UF = {
 
 
 # ============================================================
-# NORMALIZAÇÃO DE TEXTO
+# NORMALIZAÇÃO
 # ============================================================
 
 def normalizar_texto(valor):
-    """
-    Normaliza texto para facilitar buscas:
-    - converte para minúsculo;
-    - remove acentos;
-    - remove espaços duplicados.
-    """
+
     texto = str(valor or "").lower().strip()
 
     texto = unicodedata.normalize("NFKD", texto)
+
     texto = "".join(
-        caractere
-        for caractere in texto
-        if not unicodedata.combining(caractere)
+        c for c in texto
+        if not unicodedata.combining(c)
     )
 
     texto = re.sub(r"\s+", " ", texto)
@@ -192,14 +168,11 @@ def normalizar_texto(valor):
 
 
 # ============================================================
-# BANCO DE DADOS
+# BANCO
 # ============================================================
 
 def criar_tabela():
-    """
-    Cria a tabela principal caso ainda não exista.
-    A URL fica como UNIQUE para evitar notícia duplicada.
-    """
+
     sql = """
     CREATE TABLE IF NOT EXISTS pop_rua (
         id SERIAL PRIMARY KEY,
@@ -234,10 +207,7 @@ def criar_tabela():
 
 
 def inserir_registro(registro):
-    """
-    Insere um registro na tabela pop_rua.
-    Caso a URL já exista, ignora.
-    """
+
     sql = """
     INSERT INTO pop_rua (
         titulo,
@@ -274,34 +244,30 @@ def inserir_registro(registro):
 # ============================================================
 # MUNICÍPIOS
 # ============================================================
+
 def carregar_municipios():
 
-    print("📍 Carregando base de municípios do IBGE/GitHub...")
+    print("📍 Carregando municípios...")
 
-    df_municipios = pd.read_csv(URL_IBGE)
+    df = pd.read_csv(URL_IBGE)
 
-    df_municipios["nome_norm"] = (
-        df_municipios["nome"]
+    df["nome_norm"] = (
+        df["nome"]
         .astype(str)
         .apply(normalizar_texto)
     )
 
     coords_local = {}
 
-    for _, row in df_municipios.iterrows():
+    for _, row in df.iterrows():
 
         try:
+
             codigo_uf = int(row["codigo_uf"])
 
             municipio_norm = row["nome_norm"]
 
             nome_original = str(row["nome"]).strip()
-
-            if (
-                nome_original.lower().startswith("área de")
-                or nome_original.lower().startswith("area de")
-            ):
-                continue
 
             coords_local[municipio_norm] = {
                 "nome_original": nome_original,
@@ -324,28 +290,20 @@ def carregar_municipios():
     return coords_local, lista_local
 
 
-# Carrega uma vez na inicialização do script.
 COORDS, LISTA_MUNICIPIOS = carregar_municipios()
 
 
 # ============================================================
-# DETECÇÃO DE MUNICÍPIO
+# DETECTAR MUNICÍPIO
 # ============================================================
+
 def detectar_municipio(titulo, texto):
-    """
-    Detecta município de forma segura.
-    """
 
     titulo_norm = normalizar_texto(titulo)
     texto_norm = normalizar_texto(texto)
 
-    # =====================================================
-    # PRIORIDADE NO TÍTULO
-    # =====================================================
-
     for municipio_norm in LISTA_MUNICIPIOS:
 
-        # Ignora nomes muito pequenos
         if len(municipio_norm) < 4:
             continue
 
@@ -354,11 +312,7 @@ def detectar_municipio(titulo, texto):
         if re.search(padrao, titulo_norm):
             return municipio_norm
 
-    # =====================================================
-    # TEXTO LIMITADO
-    # =====================================================
-
-    trecho = texto_norm[:2500]
+    trecho = texto_norm[:4000]
 
     for municipio_norm in LISTA_MUNICIPIOS:
 
@@ -369,7 +323,6 @@ def detectar_municipio(titulo, texto):
 
         ocorrencias = re.findall(padrao, trecho)
 
-        # exige repetição
         if len(ocorrencias) >= 1:
             return municipio_norm
 
@@ -381,16 +334,16 @@ def detectar_municipio(titulo, texto):
 # ============================================================
 
 def classificar(texto):
-    """
-    Classifica a notícia com base em palavras-chave simples.
-    """
+
     texto_norm = normalizar_texto(texto)
 
     for categoria, palavras in CATEGORIAS.items():
+
         if categoria == "Outros":
             continue
 
         for palavra in palavras:
+
             palavra_norm = normalizar_texto(palavra)
 
             if palavra_norm in texto_norm:
@@ -400,16 +353,19 @@ def classificar(texto):
 
 
 # ============================================================
-# PROCESSAMENTO DE NOTÍCIA
+# PROCESSAR NOTÍCIA
 # ============================================================
 
-def processar_noticia(url, query_origem):
+def processar_noticia(item):
+
+    url, query_origem = item
 
     try:
+
         artigo = Article(
             url,
             language="pt",
-            request_timeout=10
+            request_timeout=8
         )
 
         artigo.download()
@@ -418,11 +374,8 @@ def processar_noticia(url, query_origem):
         titulo = artigo.title or ""
         texto = artigo.text or ""
 
-        if not titulo and not texto:
-            print(f"⚠️ Artigo vazio: {url}")
+        if len(texto) < 100:
             return None
-
-        base = f"{titulo} {texto}"
 
         municipio_norm = detectar_municipio(
             titulo=titulo,
@@ -458,7 +411,7 @@ def processar_noticia(url, query_origem):
             )
 
         return {
-            "titulo": titulo.strip(),
+            "titulo": titulo[:1000],
             "url": url,
             "municipio": municipio,
             "uf": uf,
@@ -470,42 +423,19 @@ def processar_noticia(url, query_origem):
             "query_origem": query_origem,
         }
 
-    except Exception as e:
-
-        print(f"❌ Erro ao processar URL: {url}")
-        print(f"Motivo: {e}")
-
+    except Exception:
         return None
 
 
 # ============================================================
-# BUSCA DE URLS (VERSÃO TURBINADA)
+# BUSCA TURBINADA
 # ============================================================
 
 def buscar_urls():
-    """
-    Busca URLs em larga escala usando:
-    - múltiplas queries;
-    - variações;
-    - períodos;
-    - DDGS;
-    - operadores extras.
-
-    Retorna:
-    {
-        url: query_origem
-    }
-    """
 
     urls_encontradas = {}
 
-    print("🔎 INICIANDO BUSCAS AVANÇADAS...")
-
-    # ========================================================
-    # EXPANSÃO DE QUERIES
-    # ========================================================
-
-    queries_expandidas = []
+    print("🔎 Iniciando buscas avançadas...")
 
     anos = [
         "2020",
@@ -518,23 +448,22 @@ def buscar_urls():
     ]
 
     estados = [
-        "SP", "RJ", "MG", "BA", "PR", "RS",
-        "SC", "GO", "DF", "PE", "CE", "PA"
+        "SP", "RJ", "MG", "BA", "PR",
+        "RS", "SC", "GO", "DF", "PE",
+        "CE", "PA"
     ]
 
-    termos_extra = [
+    sites = [
         "site:g1.globo.com",
         "site:uol.com.br",
-        "site:cnnbrasil.com.br",
         "site:terra.com.br",
         "site:metropoles.com",
+        "site:cnnbrasil.com.br",
         "site:band.uol.com.br",
         "site:recordtv.r7.com",
     ]
 
-    # ========================================================
-    # GERA COMBINAÇÕES
-    # ========================================================
+    queries_expandidas = []
 
     for query in QUERIES:
 
@@ -546,21 +475,16 @@ def buscar_urls():
         for uf in estados:
             queries_expandidas.append(f"{query} {uf}")
 
-        for termo in termos_extra:
-            queries_expandidas.append(f"{query} {termo}")
+        for site in sites:
+            queries_expandidas.append(f"{query} {site}")
 
         for ano in anos:
             for uf in estados:
                 queries_expandidas.append(f"{query} {uf} {ano}")
 
-    # remove duplicadas
     queries_expandidas = list(set(queries_expandidas))
 
-    print(f"📌 Total de queries expandidas: {len(queries_expandidas)}")
-
-    # ========================================================
-    # EXECUTA BUSCAS
-    # ========================================================
+    print(f"📌 Queries totais: {len(queries_expandidas)}")
 
     try:
 
@@ -578,10 +502,10 @@ def buscar_urls():
                         query,
                         region="br-pt",
                         safesearch="off",
-                        max_results=400
+                        max_results=300
                     )
 
-                    contador_query = 0
+                    novos = 0
 
                     for resultado in resultados:
 
@@ -590,60 +514,54 @@ def buscar_urls():
                         if not url:
                             continue
 
-                        # ignora PDFs
-                        if ".pdf" in url.lower():
-                            continue
+                        url_lower = url.lower()
 
-                        # ignora redes sociais
                         if any(
-                            rede in url.lower()
-                            for rede in [
+                            lixo in url_lower
+                            for lixo in [
+                                ".pdf",
                                 "facebook",
                                 "instagram",
                                 "twitter",
                                 "x.com",
-                                "tiktok",
-                                "youtube"
+                                "youtube",
+                                "tiktok"
                             ]
                         ):
                             continue
 
                         if url not in urls_encontradas:
                             urls_encontradas[url] = query
-                            contador_query += 1
+                            novos += 1
 
-                    print(f"✅ URLs novas nesta query: {contador_query}")
+                    print(f"✅ Novas URLs: {novos}")
                     print(f"📦 Total acumulado: {len(urls_encontradas)}")
 
                 except Exception as e:
 
-                    print(f"❌ Erro na query:")
-                    print(query)
+                    print("❌ Erro na query")
                     print(e)
 
-                # delay menor
-                time.sleep(random.uniform(0.2, 0.8))
+                time.sleep(random.uniform(0.1, 0.4))
 
     except Exception as e:
 
-        print("❌ Erro geral no DDGS")
+        print("❌ Erro geral DDGS")
         print(e)
 
     print("================================================")
-    print(f"✅ TOTAL FINAL DE URLS: {len(urls_encontradas)}")
+    print(f"✅ TOTAL FINAL: {len(urls_encontradas)} URLs")
     print("================================================")
 
     return urls_encontradas
 
 
 # ============================================================
-# RESUMO NO BANCO
+# RESUMO
 # ============================================================
 
 def exibir_resumo_banco():
-    """
-    Exibe resumo simples da tabela após a coleta.
-    """
+
     sql = """
     SELECT
         COUNT(*) AS total_registros,
@@ -653,18 +571,19 @@ def exibir_resumo_banco():
     FROM pop_rua;
     """
 
-    try:
-        with engine.begin() as conn:
-            row = conn.execute(text(sql)).mappings().first()
+    with engine.begin() as conn:
 
-        print("========== RESUMO DO BANCO ==========")
-        print(f"Total registros: {row['total_registros']}")
-        print(f"Total URLs: {row['total_urls']}")
-        print(f"Total municípios: {row['total_municipios']}")
-        print(f"Total categorias: {row['total_categorias']}")
+        row = conn.execute(
+            text(sql)
+        ).mappings().first()
 
-    except Exception as e:
-        print(f"⚠️ Não foi possível exibir resumo do banco: {e}")
+    print("======================================")
+    print("📊 RESUMO BANCO")
+    print("======================================")
+    print(f"Registros: {row['total_registros']}")
+    print(f"URLs: {row['total_urls']}")
+    print(f"Municípios: {row['total_municipios']}")
+    print(f"Categorias: {row['total_categorias']}")
 
 
 # ============================================================
@@ -672,9 +591,10 @@ def exibir_resumo_banco():
 # ============================================================
 
 def main():
+
     print("======================================")
-    print("🚀 INICIANDO COLETOR POP RUA")
-    print(f"⏰ Data/hora início: {datetime.now()}")
+    print("🚀 INICIANDO COLETOR TURBINADO")
+    print(f"⏰ {datetime.now()}")
     print("======================================")
 
     criar_tabela()
@@ -682,7 +602,7 @@ def main():
     urls = buscar_urls()
 
     if not urls:
-        print("⚠️ Nenhuma URL encontrada. Finalizando.")
+        print("⚠️ Nenhuma URL encontrada.")
         return
 
     total_processadas = 0
@@ -690,46 +610,72 @@ def main():
     total_duplicadas = 0
     total_erros = 0
 
-    for indice, (url, query_origem) in enumerate(urls.items(), start=1):
-        print("--------------------------------------")
-        print(f"Processando {indice}/{len(urls)}")
-        print(f"URL: {url}")
-
-        registro = processar_noticia(url, query_origem)
-
-        if not registro:
-            total_erros += 1
-            time.sleep(random.uniform(0.1, 0.4))
-            continue
-
-        total_processadas += 1
-
-        try:
-            inseriu = inserir_registro(registro)
-
-            if inseriu:
-                total_inseridas += 1
-                print(f"✅ Inserido: {registro['titulo'][:100]}")
-            else:
-                total_duplicadas += 1
-                print(f"🔁 Duplicado ignorado: {registro['titulo'][:100]}")
-
-        except SQLAlchemyError as e:
-            total_erros += 1
-            print("❌ Erro ao inserir no banco.")
-            print(f"   Motivo: {e}")
-
-        time.sleep(random.uniform(0.5, 1.5))
+    itens = list(urls.items())
 
     print("======================================")
-    print("📌 RESUMO DA EXECUÇÃO")
+    print("⚡ PROCESSAMENTO MULTITHREAD")
     print("======================================")
+
+    with ThreadPoolExecutor(max_workers=30) as executor:
+
+        futures = {
+            executor.submit(processar_noticia, item): item
+            for item in itens
+        }
+
+        for indice, future in enumerate(as_completed(futures), start=1):
+
+            try:
+
+                registro = future.result()
+
+                print("--------------------------------------")
+                print(f"Processado: {indice}/{len(itens)}")
+
+                if not registro:
+                    total_erros += 1
+                    continue
+
+                total_processadas += 1
+
+                inseriu = inserir_registro(registro)
+
+                if inseriu:
+
+                    total_inseridas += 1
+
+                    print(
+                        f"✅ Inserido: "
+                        f"{registro['titulo'][:80]}"
+                    )
+
+                else:
+
+                    total_duplicadas += 1
+
+                    print(
+                        f"🔁 Duplicado: "
+                        f"{registro['titulo'][:80]}"
+                    )
+
+            except Exception as e:
+
+                total_erros += 1
+
+                print("❌ Erro future")
+                print(e)
+
+    print("======================================")
+    print("📌 RESUMO FINAL")
+    print("======================================")
+
     print(f"URLs encontradas: {len(urls)}")
-    print(f"Notícias processadas: {total_processadas}")
-    print(f"Novos registros inseridos: {total_inseridas}")
-    print(f"Duplicados ignorados: {total_duplicadas}")
+    print(f"Processadas: {total_processadas}")
+    print(f"Inseridas: {total_inseridas}")
+    print(f"Duplicadas: {total_duplicadas}")
     print(f"Erros: {total_erros}")
-    print(f"⏰ Data/hora fim: {datetime.now()}")
+
+    print(f"⏰ Finalizado: {datetime.now()}")
 
     exibir_resumo_banco()
 
