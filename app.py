@@ -875,43 +875,22 @@ def criar_figura_vazia(titulo):
     
    def estilizar_grafico(fig):
     fig.update_layout(
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-
-        font={
-            "family": "Arial",
-            "color": "#374151"
-        },
-
-        title={
-            "x": 0.02,
-            "xanchor": "left",
-            "font": {
-                "size": 20
-            }
-        },
-
-        margin={
-            "l": 20,
-            "r": 20,
-            "t": 60,
-            "b": 20
-        },
-
-        hoverlabel={
-            "bgcolor": "white",
-            "font_size": 13
-        }
+        paper_bgcolor="#111827",
+        plot_bgcolor="#111827",
+        font=dict(color="white"),
+        title_font=dict(size=18, color="white"),
+        margin=dict(l=20, r=20, t=60, b=20),
+        height=420
     )
 
     fig.update_xaxes(
-        showgrid=True,
-        gridcolor="#f3f4f6"
+        showgrid=False,
+        zeroline=False
     )
 
     fig.update_yaxes(
-        showgrid=True,
-        gridcolor="#f3f4f6"
+        gridcolor="rgba(255,255,255,0.08)",
+        zeroline=False
     )
 
     return fig
