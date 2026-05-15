@@ -269,6 +269,12 @@ def carregar_municipios():
 
             nome_original = str(row["nome"]).strip()
 
+            if (
+                nome_original.lower().startswith("área de")
+                or nome_original.lower().startswith("area de")
+            ):
+                continue
+
             coords_local[municipio_norm] = {
                 "nome_original": nome_original,
                 "latitude": float(row["latitude"]),
@@ -344,7 +350,9 @@ def detectar_municipio(titulo, texto, url=""):
 
         padrao = rf"\b{re.escape(municipio_norm)}\b"
 
-        if re.search(padrao, trecho):
+        ocorrencias = re.findall(padrao, trecho)
+
+        if len(ocorrencias) >= 1:
             return municipio_norm
 
     return None
@@ -386,7 +394,7 @@ def processar_noticia(item):
         artigo = Article(
             url,
             language="pt",
-            request_timeout=15
+            request_timeout=20
         )
 
         artigo.download()
@@ -395,13 +403,13 @@ def processar_noticia(item):
         titulo = artigo.title or ""
         texto = artigo.text or ""
 
-        if len(texto) < 100:
+        if len(texto) < 50:
             return None
 
         municipio_norm = detectar_municipio(
-             titulo=titulo,
-             texto=texto,
-             url=url
+            titulo=titulo,
+            texto=texto,
+            url=url
         )
 
         if municipio_norm:
@@ -541,10 +549,16 @@ def buscar_urls():
                         if any(
                             lixo in url_lower
                             for lixo in [
-                                 ".pdf"
+                                ".pdf",
+                                "youtube.com",
+                                "youtu.be",
+                                "facebook.com",
+                                "instagram.com",
+                                "twitter.com",
+                                "x.com",
                             ]
-                       ):
-                        continue
+                        ):
+                            continue
 
                         if url not in urls_encontradas:
                             urls_encontradas[url] = query
@@ -558,7 +572,7 @@ def buscar_urls():
                     print("❌ Erro na query")
                     print(e)
 
-                time.sleep(random.uniform(0.1, 0.4))
+                time.sleep(random.uniform(0.05, 0.2))
 
     except Exception as e:
 
