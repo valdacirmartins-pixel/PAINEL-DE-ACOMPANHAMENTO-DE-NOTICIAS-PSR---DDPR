@@ -857,6 +857,7 @@ def gerar_mapa(df):
 
 def criar_figura_vazia(titulo):
     fig = px.scatter(title=titulo)
+
     fig.update_layout(
         xaxis={"visible": False},
         yaxis={"visible": False},
@@ -868,12 +869,18 @@ def criar_figura_vazia(titulo):
                 "showarrow": False,
                 "font": {"size": 16}
             }
-        ]
+        ],
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font={"family": "Arial", "color": "#374151"},
+        margin={"l": 20, "r": 20, "t": 60, "b": 20},
+        height=420
     )
+
     return fig
-    
-    
-   def estilizar_grafico(fig):
+
+
+def estilizar_grafico(fig):
     fig.update_layout(
         paper_bgcolor="#111827",
         plot_bgcolor="#111827",
@@ -894,6 +901,7 @@ def criar_figura_vazia(titulo):
     )
 
     return fig
+
 
 def card_resumo(titulo, valor, subtitulo=None, cor="#2563eb"):
     return html.Div(
@@ -956,11 +964,13 @@ def aplicar_filtros(df, ufs, municipios, categorias, data_ini, data_fim, texto_b
 
     if data_ini:
         data_ini = pd.to_datetime(data_ini, errors="coerce")
+
         if pd.notna(data_ini):
             df = df[df["data"] >= data_ini]
 
     if data_fim:
         data_fim = pd.to_datetime(data_fim, errors="coerce")
+
         if pd.notna(data_fim):
             data_fim = data_fim + pd.Timedelta(days=1)
             df = df[df["data"] < data_fim]
@@ -975,6 +985,7 @@ def aplicar_filtros(df, ufs, municipios, categorias, data_ini, data_fim, texto_b
                 | df["categoria"].astype(str).str.lower().str.contains(texto, na=False, regex=False)
                 | df["query_origem"].astype(str).str.lower().str.contains(texto, na=False, regex=False)
             )
+
             df = df[mascara]
 
     return df
@@ -1777,8 +1788,6 @@ def atualizar_dashboard(
     try:
         token = resolver_token(token, token_contexto, usuario_store)
 
-        # Ao alternar entre abas, alguns callbacks podem disparar antes do token estar disponível.
-        # Nesses casos, não atualizamos nada para evitar a mensagem indevida de sessão inválida.
         if not token:
             raise PreventUpdate
 
@@ -1803,199 +1812,306 @@ def atualizar_dashboard(
             texto_busca=texto_busca
         )
 
+        # ============================================================
         # MAPA
+        # ============================================================
+
         if df_filtrado.empty:
             base_mapa = pd.DataFrame(
-                columns=["municipio", "uf", "categoria", "latitude", "longitude", "quantidade"]
+                columns=[
+                    "municipio",
+                    "uf",
+                    "categoria",
+                    "latitude",
+                    "longitude",
+                    "quantidade"
+                ]
             )
         else:
             base_mapa = (
                 df_filtrado
                 .dropna(subset=["latitude", "longitude"])
-                .groupby(["municipio", "uf", "categoria", "latitude", "longitude"], as_index=False)["quantidade"]
+                .groupby(
+                    [
+                        "municipio",
+                        "uf",
+                        "categoria",
+                        "latitude",
+                        "longitude"
+                    ],
+                    as_index=False
+                )["quantidade"]
                 .sum()
             )
 
         mapa_html = gerar_mapa(base_mapa)
 
-# ============================================================
-# CATEGORIA
-# ============================================================
+        # ============================================================
+        # CATEGORIA
+        # ============================================================
 
-if df_filtrado.empty:
-    fig_categoria = criar_figura_vazia("Distribuição por categoria")
-else:
-    df_categoria = (
-        df_filtrado
-        .groupby("categoria")
-        .size()
-        .reset_index(name="qtd")
-        .sort_values("qtd", ascending=False)
-    )
+        if df_filtrado.empty:
+            fig_categoria = criar_figura_vazia("Distribuição por categoria")
+        else:
+            df_categoria = (
+                df_filtrado
+                .groupby("categoria")
+                .size()
+                .reset_index(name="qtd")
+                .sort_values("qtd", ascending=False)
+            )
 
-    fig_categoria = px.pie(
-        df_categoria,
-        values="qtd",
-        names="categoria",
-        title="Distribuição por categoria",
-        hole=0.55
-    )
+            fig_categoria = px.pie(
+                df_categoria,
+                values="qtd",
+                names="categoria",
+                title="Distribuição por categoria",
+                hole=0.55
+            )
 
-    fig_categoria.update_traces(
-        textposition="inside",
-        textinfo="percent+label"
-    )
+            fig_categoria.update_traces(
+                textposition="inside",
+                textinfo="percent+label"
+            )
 
-    fig_categoria.update_layout(
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        font={"family": "Arial", "color": "#374151"},
-        title={
-            "x": 0.02,
-            "xanchor": "left",
-            "font": {"size": 20}
-        },
-        margin={"l": 10, "r": 10, "t": 60, "b": 10},
-        legend_title="Categorias"
-    )
+            fig_categoria.update_layout(
+                paper_bgcolor="white",
+                plot_bgcolor="white",
+                font={"family": "Arial", "color": "#374151"},
+                title={
+                    "x": 0.02,
+                    "xanchor": "left",
+                    "font": {"size": 20}
+                },
+                margin={"l": 10, "r": 10, "t": 60, "b": 10},
+                legend_title="Categorias"
+            )
 
+        # ============================================================
+        # UF
+        # ============================================================
 
-# ============================================================
-# UF
-# ============================================================
+        if df_filtrado.empty:
+            fig_uf = criar_figura_vazia("Registros por UF")
+        else:
+            df_uf = (
+                df_filtrado
+                .groupby("uf")
+                .size()
+                .reset_index(name="qtd")
+                .sort_values("qtd", ascending=True)
+            )
 
-if df_filtrado.empty:
-    fig_uf = criar_figura_vazia("Registros por UF")
-else:
-    df_uf = (
-        df_filtrado
-        .groupby("uf")
-        .size()
-        .reset_index(name="qtd")
-        .sort_values("qtd", ascending=True)
-    )
+            fig_uf = px.bar(
+                df_uf,
+                x="qtd",
+                y="uf",
+                orientation="h",
+                title="Registros por UF",
+                text="qtd",
+                color="qtd",
+                color_continuous_scale="Blues"
+            )
 
-    fig_uf = px.bar(
-        df_uf,
-        x="qtd",
-        y="uf",
-        orientation="h",
-        title="Registros por UF",
-        text="qtd",
-        color="qtd",
-        color_continuous_scale="Blues"
-    )
+            fig_uf.update_traces(
+                textposition="outside"
+            )
 
-    fig_uf.update_traces(
-        textposition="outside"
-    )
+            fig_uf.update_layout(
+                paper_bgcolor="white",
+                plot_bgcolor="white",
+                font={"family": "Arial", "color": "#374151"},
+                title={
+                    "x": 0.02,
+                    "xanchor": "left",
+                    "font": {"size": 20}
+                },
+                margin={"l": 20, "r": 20, "t": 60, "b": 20},
+                yaxis_title="",
+                xaxis_title="Quantidade",
+                coloraxis_showscale=False
+            )
 
-    fig_uf.update_layout(
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        font={"family": "Arial", "color": "#374151"},
-        title={
-            "x": 0.02,
-            "xanchor": "left",
-            "font": {"size": 20}
-        },
-        margin={"l": 20, "r": 20, "t": 60, "b": 20},
-        yaxis_title="",
-        xaxis_title="Quantidade",
-        coloraxis_showscale=False
-    )
+        # ============================================================
+        # EVOLUÇÃO TEMPORAL
+        # ============================================================
 
+        if df_filtrado.empty or df_filtrado["data"].dropna().empty:
+            fig_tempo = criar_figura_vazia("Evolução temporal")
 
-# ============================================================
-# EVOLUÇÃO TEMPORAL
-# ============================================================
+        else:
+            df_tempo = df_filtrado.dropna(subset=["data"]).copy()
 
-if df_filtrado.empty or df_filtrado["data"].dropna().empty:
-    fig_tempo = criar_figura_vazia("Evolução temporal")
-else:
-    df_tempo = df_filtrado.dropna(subset=["data"]).copy()
+            df_tempo["data_dia"] = (
+                pd.to_datetime(df_tempo["data"], errors="coerce").dt.date
+            )
 
-    df_tempo["data_dia"] = (
-        pd.to_datetime(df_tempo["data"], errors="coerce").dt.date
-    )
+            df_tempo = (
+                df_tempo
+                .dropna(subset=["data_dia"])
+                .groupby("data_dia")
+                .size()
+                .reset_index(name="qtd")
+                .sort_values("data_dia")
+            )
 
-    df_tempo = (
-        df_tempo
-        .dropna(subset=["data_dia"])
-        .groupby("data_dia")
-        .size()
-        .reset_index(name="qtd")
-        .sort_values("data_dia")
-    )
+            fig_tempo = px.area(
+                df_tempo,
+                x="data_dia",
+                y="qtd",
+                title="Evolução temporal",
+                markers=True
+            )
 
-    fig_tempo = px.area(
-        df_tempo,
-        x="data_dia",
-        y="qtd",
-        title="Evolução temporal",
-        markers=True
-    )
+            fig_tempo.update_traces(
+                line=dict(width=3),
+                mode="lines+markers"
+            )
 
-    fig_tempo.update_traces(
-        line=dict(width=3),
-        mode="lines+markers"
-    )
+            fig_tempo.update_layout(
+                paper_bgcolor="white",
+                plot_bgcolor="white",
+                font={"family": "Arial", "color": "#374151"},
+                title={
+                    "x": 0.02,
+                    "xanchor": "left",
+                    "font": {"size": 20}
+                },
+                margin={"l": 20, "r": 20, "t": 60, "b": 20},
+                xaxis_title="Data",
+                yaxis_title="Quantidade",
+                hovermode="x unified"
+            )
 
-    fig_tempo.update_layout(
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        font={"family": "Arial", "color": "#374151"},
-        title={
-            "x": 0.02,
-            "xanchor": "left",
-            "font": {"size": 20}
-        },
-        margin={"l": 20, "r": 20, "t": 60, "b": 20},
-        xaxis_title="Data",
-        yaxis_title="Quantidade",
-        hovermode="x unified"
-    )
-
+        # ============================================================
         # TABELA
+        # ============================================================
+
         tabela_df = df_filtrado.copy()
 
         if not tabela_df.empty:
-            tabela_df["data"] = pd.to_datetime(tabela_df["data"], errors="coerce").dt.strftime("%d/%m/%Y %H:%M")
-            tabela_df = tabela_df[["data", "municipio", "uf", "categoria", "titulo", "url", "query_origem"]]
-        else:
-            tabela_df = pd.DataFrame(columns=["data", "municipio", "uf", "categoria", "titulo", "url", "query_origem"])
+            tabela_df["data"] = pd.to_datetime(
+                tabela_df["data"],
+                errors="coerce"
+            ).dt.strftime("%d/%m/%Y %H:%M")
 
+            tabela_df = tabela_df[
+                [
+                    "data",
+                    "municipio",
+                    "uf",
+                    "categoria",
+                    "titulo",
+                    "url",
+                    "query_origem"
+                ]
+            ]
+
+        else:
+            tabela_df = pd.DataFrame(
+                columns=[
+                    "data",
+                    "municipio",
+                    "uf",
+                    "categoria",
+                    "titulo",
+                    "url",
+                    "query_origem"
+                ]
+            )
+
+        # ============================================================
         # CARDS
+        # ============================================================
+
         total_registros = len(df_filtrado)
-        total_municipios = df_filtrado["municipio"].nunique() if not df_filtrado.empty else 0
-        total_ufs = df_filtrado["uf"].nunique() if not df_filtrado.empty else 0
-        total_categorias = df_filtrado["categoria"].nunique() if not df_filtrado.empty else 0
+
+        total_municipios = (
+            df_filtrado["municipio"].nunique()
+            if not df_filtrado.empty else 0
+        )
+
+        total_ufs = (
+            df_filtrado["uf"].nunique()
+            if not df_filtrado.empty else 0
+        )
+
+        total_categorias = (
+            df_filtrado["categoria"].nunique()
+            if not df_filtrado.empty else 0
+        )
 
         cards = [
-            card_resumo("Total de registros", formatar_numero(total_registros)),
-            card_resumo("Municípios", formatar_numero(total_municipios)),
-            card_resumo("UFs", formatar_numero(total_ufs)),
-            card_resumo("Categorias", formatar_numero(total_categorias)),
+            card_resumo(
+                "Total de registros",
+                formatar_numero(total_registros)
+            ),
+
+            card_resumo(
+                "Municípios",
+                formatar_numero(total_municipios)
+            ),
+
+            card_resumo(
+                "UFs",
+                formatar_numero(total_ufs)
+            ),
+
+            card_resumo(
+                "Categorias",
+                formatar_numero(total_categorias)
+            ),
         ]
 
+        # ============================================================
         # INSIGHT
+        # ============================================================
+
         if df_filtrado.empty:
             insight = "Sem dados para os filtros selecionados."
-        else:
-            top_municipio = df_filtrado.groupby("municipio").size().idxmax()
-            qtd_top_municipio = df_filtrado.groupby("municipio").size().max()
 
-            top_categoria = df_filtrado.groupby("categoria").size().idxmax()
-            qtd_top_categoria = df_filtrado.groupby("categoria").size().max()
+        else:
+            top_municipio = (
+                df_filtrado
+                .groupby("municipio")
+                .size()
+                .idxmax()
+            )
+
+            qtd_top_municipio = (
+                df_filtrado
+                .groupby("municipio")
+                .size()
+                .max()
+            )
+
+            top_categoria = (
+                df_filtrado
+                .groupby("categoria")
+                .size()
+                .idxmax()
+            )
+
+            qtd_top_categoria = (
+                df_filtrado
+                .groupby("categoria")
+                .size()
+                .max()
+            )
 
             insight = (
-                f"Principal município no filtro atual: {top_municipio} "
+                f"Principal município no filtro atual: "
+                f"{top_municipio} "
                 f"({formatar_numero(qtd_top_municipio)} registros). "
-                f"Principal categoria: {top_categoria} "
+                f"Principal categoria: "
+                f"{top_categoria} "
                 f"({formatar_numero(qtd_top_categoria)} registros)."
             )
 
-        dados_filtrados = df_filtrado.to_json(date_format="iso", orient="split")
+        dados_filtrados = df_filtrado.to_json(
+            date_format="iso",
+            orient="split"
+        )
 
         return (
             mapa_html,
