@@ -817,7 +817,7 @@ def gerar_mapa(df):
     mapa = folium.Map(
         location=[-14.2350, -51.9253],
         zoom_start=4,
-        ttiles="CartoDB positron"
+        tiles="CartoDB positron"
     )
 
     cluster = MarkerCluster().add_to(mapa)
@@ -871,23 +871,9 @@ def criar_figura_vazia(titulo):
         ]
     )
     return fig
+    
+    
     def estilizar_grafico(fig):
-    fig.update_layout(
-        paper_bgcolor="white",
-        plot_bgcolor="white",
-        font={"family": "Arial", "color": "#374151"},
-        title={
-            "x": 0.02,
-            "xanchor": "left",
-            "font": {"size": 20}
-        },
-        margin={"l": 20, "r": 20, "t": 60, "b": 20},
-        hovermode="x unified",
-        coloraxis_showscale=False
-    )
-
-    return fig
-def estilizar_grafico(fig):
     fig.update_layout(
         paper_bgcolor="white",
         plot_bgcolor="white",
@@ -1290,56 +1276,110 @@ def layout_tab_dashboard(perfil="usuario"):
                         }
                     )
                 ],
-                style={
-                    "display": "grid",
-                    "gridTemplateColumns": "1fr 1fr 1fr 1.2fr 1.8fr",
-                    "gap": "12px",
-                    "marginBottom": "22px",
-                    "alignItems": "center"
-                }
-            ),
+                    style={
+                        "display": "grid",
+                        "gridTemplateColumns": "1.2fr 1fr",
+                        "gap": "18px",
+                        "marginBottom": "22px"
+}
+),
 
             html.Div(
-                [
-                    html.Div(
-                        [
-                            html.H3("Mapa de ocorrências", style={"marginTop": "0", "marginBottom": "12px", "color": "#374151"}),
-                            html.Iframe(
-                                id="mapa_html",
-                                style={"width": "100%", "height": "620px", "border": "none", "borderRadius": "12px"}
-                            )
-                        ],
-                        style={
-                            "backgroundColor": "white",
-                            "padding": "16px",
-                            "borderRadius": "16px",
-                            "boxShadow": "0 4px 14px rgba(0,0,0,0.08)",
-                            "width": "50%"
-                        }
-                    ),
+    [
 
-                    html.Div(
-                        [
-                            dcc.Graph(id="grafico_categoria"),
-                            dcc.Graph(id="grafico_uf"),
-                            dcc.Graph(id="grafico_tempo")
-                        ],
-                        style={
-                            "backgroundColor": "white",
-                            "padding": "16px",
-                            "borderRadius": "16px",
-                            "boxShadow": "0 4px 14px rgba(0,0,0,0.08)",
-                            "width": "50%"
-                        }
-                    )
-                ],
-                style={
-    "display": "grid",
-    "gridTemplateColumns": "1.2fr 1fr",
-    "gap": "18px",
-    "marginBottom": "22px"
-}tyle={"display": "flex", "gap": "18px", "marginBottom": "22px"}
-            ),
+        # COLUNA ESQUERDA
+        html.Div(
+            [
+
+                # MAPA
+                html.Div(
+                    [
+                        html.H3(
+                            "Mapa de ocorrências",
+                            style={
+                                "marginTop": "0",
+                                "marginBottom": "12px",
+                                "color": "#374151"
+                            }
+                        ),
+
+                        html.Iframe(
+                            id="mapa_html",
+                            style={
+                                "width": "100%",
+                                "height": "620px",
+                                "border": "none",
+                                "borderRadius": "12px"
+                            }
+                        )
+                    ],
+                    style={
+                        "backgroundColor": "white",
+                        "padding": "16px",
+                        "borderRadius": "16px",
+                        "boxShadow": "0 4px 14px rgba(0,0,0,0.08)",
+                        "marginBottom": "18px"
+                    }
+                ),
+
+                # PIZZA EMBAIXO DO MAPA
+                html.Div(
+                    [
+                        dcc.Graph(id="grafico_categoria")
+                    ],
+                    style={
+                        "backgroundColor": "white",
+                        "padding": "16px",
+                        "borderRadius": "16px",
+                        "boxShadow": "0 4px 14px rgba(0,0,0,0.08)"
+                    }
+                )
+            ],
+            style={
+                "display": "flex",
+                "flexDirection": "column",
+                "gap": "18px"
+            }
+        ),
+
+        # COLUNA DIREITA
+        html.Div(
+            [
+                html.Div(
+                    [
+                        dcc.Graph(id="grafico_uf")
+                    ],
+                    style={
+                        "backgroundColor": "white",
+                        "padding": "16px",
+                        "borderRadius": "16px",
+                        "boxShadow": "0 4px 14px rgba(0,0,0,0.08)",
+                        "marginBottom": "18px"
+                    }
+                ),
+
+                html.Div(
+                    [
+                        dcc.Graph(id="grafico_tempo")
+                    ],
+                    style={
+                        "backgroundColor": "white",
+                        "padding": "16px",
+                        "borderRadius": "16px",
+                        "boxShadow": "0 4px 14px rgba(0,0,0,0.08)"
+                    }
+                )
+            ]
+        )
+    ],
+
+    style={
+        "display": "grid",
+        "gridTemplateColumns": "1.2fr 1fr",
+        "gap": "18px",
+        "marginBottom": "22px"
+    }
+),
 
             html.Div(
                 id="insight",
