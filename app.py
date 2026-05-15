@@ -1724,7 +1724,10 @@ def carregar_dados(n_recarregar, n_coletar, token, token_contexto, usuario_store
             if categoria
         ]
 
-        dados_json = df.to_json(date_format="iso", orient="split")
+        dados_json = df.head(3000).to_json(
+            date_format="iso",
+            orient="split"
+        )
 
         return dados_json, status, opcoes_uf, opcoes_municipio, opcoes_categoria, status_coleta
 
@@ -1829,7 +1832,7 @@ def atualizar_dashboard(
             )
         else:
             base_mapa = (
-                df_filtrado
+                df_filtrado.head(5000)
                 .dropna(subset=["latitude", "longitude"])
                 .groupby(
                     [
@@ -1987,7 +1990,7 @@ def atualizar_dashboard(
         # TABELA
         # ============================================================
 
-        tabela_df = df_filtrado.copy()
+        tabela_df = df_filtrado.head(1000).copy()
 
         if not tabela_df.empty:
             tabela_df["data"] = pd.to_datetime(
@@ -2108,10 +2111,10 @@ def atualizar_dashboard(
                 f"({formatar_numero(qtd_top_categoria)} registros)."
             )
 
-        dados_filtrados = df_filtrado.to_json(
+        dados_filtrados = df_filtrado.head(3000).to_json(
             date_format="iso",
             orient="split"
-        )
+            )
 
         return (
             mapa_html,
