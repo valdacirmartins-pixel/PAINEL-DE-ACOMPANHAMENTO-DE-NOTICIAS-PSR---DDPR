@@ -298,6 +298,38 @@ def carregar_municipios():
 
 COORDS, LISTA_MUNICIPIOS = carregar_municipios()
 
+# ============================================================
+# EXTRAIR MUNICÍPIO VIA REGEX
+# ============================================================
+
+def detectar_municipio_regex(texto):
+
+    texto_norm = normalizar_texto(texto)
+
+    padroes = [
+        r"em ([a-zA-ZÀ-ÿ\s]+)\s?[-/]\s?(SP|RJ|MG|BA|PR|RS|SC|GO|DF|PE|CE|PA)",
+        r"na cidade de ([a-zA-ZÀ-ÿ\s]+)",
+        r"no municipio de ([a-zA-ZÀ-ÿ\s]+)",
+    ]
+
+    for padrao in padroes:
+
+        resultado = re.search(
+            padrao,
+            texto,
+            flags=re.IGNORECASE
+        )
+
+        if resultado:
+
+            cidade = resultado.group(1)
+
+            cidade_norm = normalizar_texto(cidade)
+
+            if cidade_norm in COORDS:
+                return cidade_norm
+
+    return None
 
 # ============================================================
 # DETECTAR MUNICÍPIO
@@ -403,7 +435,7 @@ def processar_noticia(item):
         titulo = artigo.title or ""
         texto = artigo.text or ""
 
-        if len(texto) < 50:
+        if len(texto) < 20:
             return None
 
         municipio_norm = detectar_municipio(
@@ -532,7 +564,7 @@ def buscar_urls():
                         query,
                         region="br-pt",
                         safesearch="off",
-                        max_results=700
+                        max_results=2000
                     )
 
                     novos = 0
@@ -646,7 +678,7 @@ def main():
     print("⚡ PROCESSAMENTO MULTITHREAD")
     print("======================================")
 
-    with ThreadPoolExecutor(max_workers=12) as executor:
+    with ThreadPoolExecutor(max_workers=30) as executor:
 
         futures = {
             executor.submit(processar_noticia, item): item
