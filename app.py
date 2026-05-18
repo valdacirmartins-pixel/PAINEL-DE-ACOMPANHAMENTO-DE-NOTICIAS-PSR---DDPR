@@ -1994,7 +1994,7 @@ def atualizar_dashboard(
         # TABELA
         # ============================================================
 
-        tabela_df = df_filtrado.head(1000).copy()
+        tabela_df = df_filtrado.head(10000).copy()
 
         if not tabela_df.empty:
             tabela_df["data"] = pd.to_datetime(
