@@ -820,7 +820,12 @@ def gerar_mapa(df):
         tiles="CartoDB positron"
     )
 
-    cluster = MarkerCluster().add_to(mapa)
+   cluster = MarkerCluster(
+    disableClusteringAtZoom=10,
+    spiderfyOnMaxZoom=True,
+    showCoverageOnHover=False,
+    zoomToBoundsOnClick=True
+).add_to(mapa)
 
     if not df.empty:
         for _, row in df.iterrows():
@@ -843,7 +848,7 @@ def gerar_mapa(df):
 
             folium.CircleMarker(
                 location=[float(latitude), float(longitude)],
-                radius=min(float(quantidade) * 2.5, 18),
+                radius=min(float(quantidade) * 1.2, 10),
                 fill=True,
                 fill_opacity=0.7,
                 popup=folium.Popup(popup, max_width=300)
@@ -1724,7 +1729,7 @@ def carregar_dados(n_recarregar, n_coletar, token, token_contexto, usuario_store
             if categoria
         ]
 
-        dados_json = df.head(3000).to_json(
+        dados_json = df.head(15000).to_json(
             date_format="iso",
             orient="split"
         )
@@ -1832,20 +1837,19 @@ def atualizar_dashboard(
             )
         else:
             base_mapa = (
-                df_filtrado.head(5000)
+                df_filtrado.head(20000)
                 .dropna(subset=["latitude", "longitude"])
-                .groupby(
-                    [
-                        "municipio",
-                        "uf",
-                        "categoria",
-                        "latitude",
-                        "longitude"
-                    ],
-                    as_index=False
-                )["quantidade"]
-                .sum()
-            )
+               .groupby(
+    [
+        "municipio",
+        "uf"
+    ],
+    as_index=False
+).agg({
+    "latitude": "first",
+    "longitude": "first",
+    "quantidade": "sum"
+})
 
         mapa_html = gerar_mapa(base_mapa)
 
@@ -2111,7 +2115,7 @@ def atualizar_dashboard(
                 f"({formatar_numero(qtd_top_categoria)} registros)."
             )
 
-        dados_filtrados = df_filtrado.head(3000).to_json(
+        dados_filtrados = df_filtrado.head(15000).to_json(
             date_format="iso",
             orient="split"
             )
