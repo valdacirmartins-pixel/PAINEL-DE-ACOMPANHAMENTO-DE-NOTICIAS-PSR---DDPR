@@ -1835,19 +1835,21 @@ def atualizar_dashboard(
             )
         else:
             base_mapa = (
-                df_filtrado.head(20000)
-                .dropna(subset=["latitude", "longitude"])
-               .groupby(
-    [
-        "municipio",
-        "uf"
-    ],
-    as_index=False
-).agg({
-    "latitude": "first",
-    "longitude": "first",
-    "quantidade": "sum"
-})
+    df_filtrado.head(20000)
+    .dropna(subset=["latitude", "longitude"])
+    .groupby(
+        [
+            "municipio",
+            "uf"
+        ],
+        as_index=False
+    )
+    .agg({
+        "latitude": "first",
+        "longitude": "first",
+        "quantidade": "sum"
+    })
+)
 
         mapa_html = gerar_mapa(base_mapa)
 
