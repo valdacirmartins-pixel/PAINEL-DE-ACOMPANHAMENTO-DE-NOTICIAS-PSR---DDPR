@@ -820,12 +820,12 @@ def gerar_mapa(df):
         tiles="CartoDB positron"
     )
 
-   cluster = MarkerCluster(
-    disableClusteringAtZoom=10,
-    spiderfyOnMaxZoom=True,
-    showCoverageOnHover=False,
-    zoomToBoundsOnClick=True
-).add_to(mapa)
+    cluster = MarkerCluster(
+        disableClusteringAtZoom=10,
+        spiderfyOnMaxZoom=True,
+        showCoverageOnHover=False,
+        zoomToBoundsOnClick=True
+    ).add_to(mapa)
 
     if not df.empty:
         for _, row in df.iterrows():
@@ -837,12 +837,10 @@ def gerar_mapa(df):
 
             municipio = row.get("municipio", "Não identificado")
             uf = row.get("uf", "NI")
-            categoria = row.get("categoria", "Outros")
             quantidade = row.get("quantidade", 1)
 
             popup = f"""
             <b>Município:</b> {municipio}/{uf}<br>
-            <b>Categoria:</b> {categoria}<br>
             <b>Quantidade:</b> {quantidade}
             """
 
