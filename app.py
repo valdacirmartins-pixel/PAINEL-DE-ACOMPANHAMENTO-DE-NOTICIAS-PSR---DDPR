@@ -1412,6 +1412,7 @@ def layout_tab_dashboard(perfil="usuario"):
 
                     dash_table.DataTable(
                         id="tabela",
+                        virtualization=True,
                         columns=[
                             {"name": "Data", "id": "data"},
                             {"name": "Município", "id": "municipio"},
@@ -1421,7 +1422,7 @@ def layout_tab_dashboard(perfil="usuario"):
                             {"name": "URL", "id": "url"},
                             {"name": "Query origem", "id": "query_origem"}
                         ],
-                        page_size=15,
+                        page_size=50,
                         sort_action="native",
                         filter_action="native",
                         style_table={"overflowX": "auto"},
@@ -1727,7 +1728,7 @@ def carregar_dados(n_recarregar, n_coletar, token, token_contexto, usuario_store
             if categoria
         ]
 
-        dados_json = df.head(15000).to_json(
+        dados_json = df.to_json(
             date_format="iso",
             orient="split"
         )
@@ -1835,7 +1836,7 @@ def atualizar_dashboard(
             )
         else:
             base_mapa = (
-    df_filtrado.head(20000)
+    df_filtrado
     .dropna(subset=["latitude", "longitude"])
     .groupby(
         [
@@ -1994,7 +1995,7 @@ def atualizar_dashboard(
         # TABELA
         # ============================================================
 
-        tabela_df = df_filtrado.head(10000).copy()
+        tabela_df = df_filtrado.copy()
 
         if not tabela_df.empty:
             tabela_df["data"] = pd.to_datetime(
@@ -2115,7 +2116,7 @@ def atualizar_dashboard(
                 f"({formatar_numero(qtd_top_categoria)} registros)."
             )
 
-        dados_filtrados = df_filtrado.head(15000).to_json(
+        dados_filtrados = df_filtrado.to_json(
             date_format="iso",
             orient="split"
             )
