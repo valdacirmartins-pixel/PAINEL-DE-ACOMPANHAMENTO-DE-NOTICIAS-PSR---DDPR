@@ -380,6 +380,7 @@ def processar_noticia(item):
 
         titulo = ""
         texto = ""
+        artigo = None
 
         try:
 
@@ -388,15 +389,15 @@ def processar_noticia(item):
                 language="pt"
             )
 
-    for tentativa in range(3):
-    try:
-        artigo.download()
-        artigo.parse()
-        break
+            for tentativa in range(3):
 
-    except:
-        time.sleep(2)
-            artigo.parse()
+                try:
+                    artigo.download()
+                    artigo.parse()
+                    break
+
+                except:
+                    time.sleep(2)
 
             titulo = artigo.title or ""
             texto = artigo.text or ""
@@ -404,7 +405,9 @@ def processar_noticia(item):
         except:
             pass
 
+
         # FALLBACK
+
         if len(texto) < 50:
 
             titulo2, texto2 = extrair_texto_requests(url)
@@ -413,12 +416,16 @@ def processar_noticia(item):
                 titulo = titulo2
                 texto = texto2
 
+
         if len(texto) < 30:
             return None
 
+
         base = f"{titulo} {texto} {url}"
 
+
         municipio_norm = detectar_municipio(base)
+
 
         if municipio_norm:
 
@@ -436,44 +443,43 @@ def processar_noticia(item):
             latitude = None
             longitude = None
 
+
         categoria = classificar(base)
 
-           data_publicacao = None
 
-try:
-    data_publicacao = artigo.publish_date
-except:
-    pass
+        data_publicacao = None
+
+        try:
+
+            if artigo:
+                data_publicacao = artigo.publish_date
+
+        except:
+
+            pass
 
 
-return {
-    "titulo": titulo[:1000],
-    "url": url,
-    "municipio": municipio,
-    "uf": uf,
-    "categoria": categoria,
-    "latitude": latitude,
-    "longitude": longitude,
-    "data_coleta": datetime.now(),
-    "data_publicacao": data_publicacao,
-    "query_origem": query,
-}
+        return {
 
-    except:
+            "titulo": titulo[:1000],
+            "url": url,
+            "municipio": municipio,
+            "uf": uf,
+            "categoria": categoria,
+            "latitude": latitude,
+            "longitude": longitude,
+            "data_coleta": datetime.now(),
+            "data_publicacao": data_publicacao,
+            "query_origem": query
+
+        }
+
+
+    except Exception as e:
+
+        print("Erro processando:", url, e)
+
         return None
-data_publicacao = None
-
-try:
-    data_publicacao = artigo.publish_date
-except:
-    pass
-
-
-return {
-    ...
-    "data_coleta": datetime.now(),
-    "data_publicacao": data_publicacao
-}
 # ============================================================
 # BUSCAR URLS
 # ============================================================
@@ -482,115 +488,176 @@ def buscar_urls():
 
     urls = {}
 
+
     anos = [str(a) for a in range(2010, 2027)]
-    
+
     estados = list(MAPA_UF.values())
+
+
     CAPITAIS = [
-    "São Paulo",
-    "Rio de Janeiro",
-    "Salvador",
-    "Brasília",
-    "Fortaleza",
-    "Belo Horizonte",
-    "Manaus",
-    "Curitiba",
-    "Recife",
-    "Goiânia",
-    "Belém",
-    "Porto Alegre",
-    "São Luís",
-    "Maceió",
-    "Natal",
-    "João Pessoa",
-    "Teresina",
-    "Aracaju",
-    "Campo Grande",
-    "Cuiabá",
-    "Palmas",
-    "Boa Vista",
-    "Macapá",
-    "Rio Branco",
-    "Porto Velho",
-    "Vitória",
-    "Florianópolis"
-]
+        "São Paulo",
+        "Rio de Janeiro",
+        "Salvador",
+        "Brasília",
+        "Fortaleza",
+        "Belo Horizonte",
+        "Manaus",
+        "Curitiba",
+        "Recife",
+        "Goiânia",
+        "Belém",
+        "Porto Alegre",
+        "São Luís",
+        "Maceió",
+        "Natal",
+        "João Pessoa",
+        "Teresina",
+        "Aracaju",
+        "Campo Grande",
+        "Cuiabá",
+        "Palmas",
+        "Boa Vista",
+        "Macapá",
+        "Rio Branco",
+        "Porto Velho",
+        "Vitória",
+        "Florianópolis"
+    ]
+
+
     queries = []
+
 
     for q in QUERIES:
 
-    queries.append(q)
 
-    for ano in anos:
-        queries.append(f"{q} {ano}")
+        queries.append(q)
 
-    for uf in estados:
-        queries.append(f"{q} {uf}")
 
-    for cidade in CAPITAIS:
-        queries.append(f"{q} {cidade}")
-
-    for uf in estados:
         for ano in anos:
+
             queries.append(
-                f"{q} {uf} {ano}"
+                f"{q} {ano}"
             )
+
+
+        for uf in estados:
+
+            queries.append(
+                f"{q} {uf}"
+            )
+
+
+        for cidade in CAPITAIS:
+
+            queries.append(
+                f"{q} {cidade}"
+            )
+
+
+        for uf in estados:
+
+            for ano in anos:
+
+                queries.append(
+                    f"{q} {uf} {ano}"
+                )
+
 
     queries = list(set(queries))
 
+
     print(f"🔎 {len(queries)} queries")
+
 
     with DDGS() as ddgs:
 
+
         for i, query in enumerate(queries):
+
 
             try:
 
-                print(f"🔍 {i+1}/{len(queries)}")
+                print(
+                    f"🔍 {i+1}/{len(queries)}"
+                )
+
 
                 resultados = ddgs.text(
+
                     query,
+
                     region="br-pt",
+
                     safesearch="off",
+
                     max_results=100
+
                 )
+
 
                 novos = 0
 
+
                 for r in resultados:
+
 
                     url = r.get("href")
 
+
                     if not url:
-    continue
+
+                        continue
 
 
-if any(x in url.lower() for x in [
-    "youtube",
-    "facebook",
-    "instagram",
-    "twitter",
-    "x.com",
-    "tiktok",
-    ".pdf",
-    "/tag/",
-    "/categoria/",
-    "/search/",
-    "/busca/"
-]):
-    continue
+
+                    if any(x in url.lower() for x in [
+
+                        "youtube",
+                        "facebook",
+                        "instagram",
+                        "twitter",
+                        "x.com",
+                        "tiktok",
+                        ".pdf",
+                        "/tag/",
+                        "/categoria/",
+                        "/search/",
+                        "/busca/"
+
+                    ]):
+
+                        continue
+
+
 
                     if url not in urls:
+
                         urls[url] = query
+
                         novos += 1
 
-                print(f"✅ +{novos}")
+
+
+                print(
+                    f"✅ +{novos}"
+                )
+
 
             except Exception as e:
+
                 print(e)
+
+
 
             time.sleep(0.1)
 
-    print(f"📦 TOTAL URLs: {len(urls)}")
+
+
+    print(
+        f"📦 TOTAL URLs: {len(urls)}"
+    )
+
 
     return urls
 
