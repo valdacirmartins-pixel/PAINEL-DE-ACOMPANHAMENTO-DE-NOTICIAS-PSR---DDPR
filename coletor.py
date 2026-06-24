@@ -159,6 +159,7 @@ def criar_tabela():
         categoria TEXT,
         latitude DOUBLE PRECISION,
         longitude DOUBLE PRECISION,
+        data TIMESTAMP,
         data_coleta TIMESTAMP,
         data_publicacao TIMESTAMP NULL,
         query_origem TEXT,
@@ -184,6 +185,7 @@ def inserir_registro(registro):
         categoria,
         latitude,
         longitude,
+        data,
         data_coleta,
         data_publicacao,
         query_origem
@@ -196,6 +198,7 @@ def inserir_registro(registro):
         :categoria,
         :latitude,
         :longitude,
+        :data_coleta,
         :data_coleta,
         :data_publicacao,
         :query_origem
@@ -385,11 +388,12 @@ def processar_noticia(item):
                 language="pt"
             )
 
-            for tentativa in range(3):
-
+    for tentativa in range(3):
     try:
         artigo.download()
+        artigo.parse()
         break
+
     except:
         time.sleep(2)
             artigo.parse()
@@ -434,28 +438,42 @@ def processar_noticia(item):
 
         categoria = classificar(base)
 
-        return {
-            "titulo": titulo[:1000],
-            "url": url,
-            "municipio": municipio,
-            "uf": uf,
-            "categoria": categoria,
-            "latitude": latitude,
-            "longitude": longitude,
-            "data_coleta": datetime.now(),
-            data_publicacao = None
+           data_publicacao = None
 
 try:
     data_publicacao = artigo.publish_date
 except:
     pass
+
+
+return {
+    "titulo": titulo[:1000],
+    "url": url,
+    "municipio": municipio,
+    "uf": uf,
+    "categoria": categoria,
+    "latitude": latitude,
+    "longitude": longitude,
+    "data_coleta": datetime.now(),
     "data_publicacao": data_publicacao,
-            "query_origem": query,
-        }
+    "query_origem": query,
+}
 
     except:
         return None
+data_publicacao = None
 
+try:
+    data_publicacao = artigo.publish_date
+except:
+    pass
+
+
+return {
+    ...
+    "data_coleta": datetime.now(),
+    "data_publicacao": data_publicacao
+}
 # ============================================================
 # BUSCAR URLS
 # ============================================================
@@ -465,14 +483,6 @@ def buscar_urls():
     urls = {}
 
     anos = [str(a) for a in range(2010, 2027)]
-    meses = [
-    "janeiro","fevereiro","março","abril",
-    "maio","junho","julho","agosto",
-    "setembro","outubro","novembro","dezembro"
-]
-    for ano in anos:
-    for mes in meses:
-        queries.append(f"{q} {mes} {ano}")
     
     estados = list(MAPA_UF.values())
     CAPITAIS = [
@@ -504,24 +514,26 @@ def buscar_urls():
     "Vitória",
     "Florianópolis"
 ]
-    for cidade in CAPITAIS:
-    queries.append(f"{q} {cidade}")
-
     queries = []
 
     for q in QUERIES:
 
-        queries.append(q)
+    queries.append(q)
 
+    for ano in anos:
+        queries.append(f"{q} {ano}")
+
+    for uf in estados:
+        queries.append(f"{q} {uf}")
+
+    for cidade in CAPITAIS:
+        queries.append(f"{q} {cidade}")
+
+    for uf in estados:
         for ano in anos:
-            queries.append(f"{q} {ano}")
-
-        for uf in estados:
-            queries.append(f"{q} {uf}")
-
-        for uf in estados:
-            for ano in anos:
-                queries.append(f"{q} {uf} {ano}")
+            queries.append(
+                f"{q} {uf} {ano}"
+            )
 
     queries = list(set(queries))
 
@@ -539,7 +551,7 @@ def buscar_urls():
                     query,
                     region="br-pt",
                     safesearch="off",
-                    max_results=300
+                    max_results=100
                 )
 
                 novos = 0
@@ -549,8 +561,10 @@ def buscar_urls():
                     url = r.get("href")
 
                     if not url:
-                        continue
-                        if any(x in url.lower() for x in [
+    continue
+
+
+if any(x in url.lower() for x in [
     "youtube",
     "facebook",
     "instagram",
