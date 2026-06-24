@@ -590,12 +590,19 @@ def main():
 
     urls = buscar_urls()
 
+    print("=" * 60)
+    print(f"TOTAL URLS ENCONTRADAS: {len(urls)}")
+    print("=" * 60)
+
     itens = list(urls.items())
 
     total = 0
-com_municipio = 0
-sem_municipio = 0
-processadas = 0
+    com_municipio = 0
+    sem_municipio = 0
+    processadas = 0
+
+    print("INICIANDO PROCESSAMENTO")
+    print(f"ITENS: {len(itens)}")
 
     with ThreadPoolExecutor(max_workers=20) as executor:
 
@@ -607,54 +614,57 @@ processadas = 0
             for item in itens
         ]
 
-for future in as_completed(futures):
+        for future in as_completed(futures):
 
-    registro = future.result()
+            registro = future.result()
 
-    if not registro:
-        continue
+            if not registro:
+                continue
 
-    processadas += 1
+            processadas += 1
 
-    try:
+            try:
 
-        inseriu = inserir_registro(registro)
+                inseriu = inserir_registro(registro)
 
-        if inseriu:
+                if inseriu:
 
-            total += 1
+                    total += 1
 
-            if registro["municipio"] == "Não identificado":
-                sem_municipio += 1
-            else:
-                com_municipio += 1
+                    if registro["municipio"] == "Não identificado":
+                        sem_municipio += 1
+                    else:
+                        com_municipio += 1
 
-            print(f"✅ {total}")
+                    if total % 100 == 0:
+                        print(f"✅ INSERIDOS: {total}")
 
-    except Exception as e:
-        print(e)
+            except Exception as e:
+                print(e)
 
     print("\n================================")
-print("RESUMO DA COLETA")
-print("================================")
-print(f"URLs encontradas: {len(urls)}")
-print(f"Notícias processadas: {processadas}")
-print(f"Total inserido: {total}")
-print(f"Com município identificado: {com_municipio}")
-print(f"Sem município identificado: {sem_municipio}")
+    print("RESUMO DA COLETA")
+    print("================================")
+    print(f"URLs encontradas: {len(urls)}")
+    print(f"Notícias processadas: {processadas}")
+    print(f"Total inserido: {total}")
+    print(f"Com município identificado: {com_municipio}")
+    print(f"Sem município identificado: {sem_municipio}")
 
-if total > 0:
-    percentual = round(
-        (com_municipio / total) * 100,
-        2
-    )
+    if total > 0:
 
-    print(
-        f"Taxa de identificação: "
-        f"{percentual}%"
-    )
+        percentual = round(
+            (com_municipio / total) * 100,
+            2
+        )
 
-print("================================\n")
+        print(
+            f"Taxa de identificação: "
+            f"{percentual}%"
+        )
+
+    print("================================\n")
+
 
 if __name__ == "__main__":
     main()
