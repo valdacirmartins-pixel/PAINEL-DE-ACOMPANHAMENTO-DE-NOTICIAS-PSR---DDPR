@@ -14,7 +14,9 @@ from ddgs import DDGS
 from newspaper import Article
 
 from sqlalchemy import create_engine, text
+import socket
 
+socket.setdefaulttimeout(15)
 
 # ============================================================
 # CONFIG
@@ -252,6 +254,17 @@ def carregar_municipios():
     return coords, lista
 
 COORDS, LISTA_MUNICIPIOS = carregar_municipios()
+REGEX_MUNICIPIOS = re.compile(
+    r"\b(" +
+    "|".join(
+        map(
+            re.escape,
+            sorted(LISTA_MUNICIPIOS, key=len, reverse=True)
+        )
+    ) +
+    r")\b",
+    re.IGNORECASE
+)
 
 # ============================================================
 # DETECTAR MUNICÍPIO
@@ -261,13 +274,10 @@ def detectar_municipio(texto):
 
     texto_norm = normalizar_texto(texto)
 
-    for municipio in LISTA_MUNICIPIOS:
+    match = REGEX_MUNICIPIOS.search(texto_norm)
 
-        if len(municipio) < 3:
-            continue
-
-        if municipio in texto_norm:
-            return municipio
+    if match:
+        return normalizar_texto(match.group(0))
 
     return None
 
@@ -279,29 +289,42 @@ def classificar(texto):
 
     texto = normalizar_texto(texto)
 
-    if any(x in texto for x in [
+    morte = [
         "morto",
         "morreu",
         "assassinado",
         "homicidio",
-        "homicídio"
-    ]):
-        return "Morte"
+        "homicídio",
+        "executado",
+        "corpo encontrado",
+        "óbito"
+    ]
 
-    if any(x in texto for x in [
+    violencia = [
         "agredido",
         "espancado",
         "violencia",
         "violência",
         "baleado",
-        "esfaqueado"
-    ]):
+        "esfaqueado",
+        "ataque",
+        "ferido"
+    ]
+
+    acidente = [
+        "atropelado",
+        "acidente",
+        "colisão",
+        "colisao"
+    ]
+
+    if any(x in texto for x in morte):
+        return "Morte"
+
+    if any(x in texto for x in violencia):
         return "Violência"
 
-    if any(x in texto for x in [
-        "atropelado",
-        "acidente"
-    ]):
+    if any(x in texto for x in acidente):
         return "Acidente"
 
     return "Outros"
@@ -362,7 +385,13 @@ def processar_noticia(item):
                 language="pt"
             )
 
-            artigo.download()
+            for tentativa in range(3):
+
+    try:
+        artigo.download()
+        break
+    except:
+        time.sleep(2)
             artigo.parse()
 
             titulo = artigo.title or ""
@@ -414,7 +443,13 @@ def processar_noticia(item):
             "latitude": latitude,
             "longitude": longitude,
             "data_coleta": datetime.now(),
-            "data_publicacao": None,
+            data_publicacao = None
+
+try:
+    data_publicacao = artigo.publish_date
+except:
+    pass
+    "data_publicacao": data_publicacao,
             "query_origem": query,
         }
 
@@ -429,19 +464,48 @@ def buscar_urls():
 
     urls = {}
 
-    anos = [
-        "2018",
-        "2019",
-        "2020",
-        "2021",
-        "2022",
-        "2023",
-        "2024",
-        "2025",
-        "2026"
-    ]
-
+    anos = [str(a) for a in range(2010, 2027)]
+    meses = [
+    "janeiro","fevereiro","março","abril",
+    "maio","junho","julho","agosto",
+    "setembro","outubro","novembro","dezembro"
+]
+    for ano in anos:
+    for mes in meses:
+        queries.append(f"{q} {mes} {ano}")
+    
     estados = list(MAPA_UF.values())
+    CAPITAIS = [
+    "São Paulo",
+    "Rio de Janeiro",
+    "Salvador",
+    "Brasília",
+    "Fortaleza",
+    "Belo Horizonte",
+    "Manaus",
+    "Curitiba",
+    "Recife",
+    "Goiânia",
+    "Belém",
+    "Porto Alegre",
+    "São Luís",
+    "Maceió",
+    "Natal",
+    "João Pessoa",
+    "Teresina",
+    "Aracaju",
+    "Campo Grande",
+    "Cuiabá",
+    "Palmas",
+    "Boa Vista",
+    "Macapá",
+    "Rio Branco",
+    "Porto Velho",
+    "Vitória",
+    "Florianópolis"
+]
+    for cidade in CAPITAIS:
+    queries.append(f"{q} {cidade}")
 
     queries = []
 
@@ -486,14 +550,20 @@ def buscar_urls():
 
                     if not url:
                         continue
-
-                    if any(x in url.lower() for x in [
-                        "youtube",
-                        "facebook",
-                        "instagram",
-                        ".pdf"
-                    ]):
-                        continue
+                        if any(x in url.lower() for x in [
+    "youtube",
+    "facebook",
+    "instagram",
+    "twitter",
+    "x.com",
+    "tiktok",
+    ".pdf",
+    "/tag/",
+    "/categoria/",
+    "/search/",
+    "/busca/"
+]):
+    continue
 
                     if url not in urls:
                         urls[url] = query
@@ -523,8 +593,11 @@ def main():
     itens = list(urls.items())
 
     total = 0
+com_municipio = 0
+sem_municipio = 0
+processadas = 0
 
-    with ThreadPoolExecutor(max_workers=40) as executor:
+    with ThreadPoolExecutor(max_workers=20) as executor:
 
         futures = [
             executor.submit(
@@ -534,27 +607,54 @@ def main():
             for item in itens
         ]
 
-        for future in as_completed(futures):
+for future in as_completed(futures):
 
-            registro = future.result()
+    registro = future.result()
 
-            if not registro:
-                continue
+    if not registro:
+        continue
 
-            try:
+    processadas += 1
 
-                inseriu = inserir_registro(registro)
+    try:
 
-                if inseriu:
-                    total += 1
-                    print(f"✅ {total}")
+        inseriu = inserir_registro(registro)
 
-            except Exception as e:
-                print(e)
+        if inseriu:
 
-    print("================================")
-    print(f"TOTAL INSERIDO: {total}")
-    print("================================")
+            total += 1
+
+            if registro["municipio"] == "Não identificado":
+                sem_municipio += 1
+            else:
+                com_municipio += 1
+
+            print(f"✅ {total}")
+
+    except Exception as e:
+        print(e)
+
+    print("\n================================")
+print("RESUMO DA COLETA")
+print("================================")
+print(f"URLs encontradas: {len(urls)}")
+print(f"Notícias processadas: {processadas}")
+print(f"Total inserido: {total}")
+print(f"Com município identificado: {com_municipio}")
+print(f"Sem município identificado: {sem_municipio}")
+
+if total > 0:
+    percentual = round(
+        (com_municipio / total) * 100,
+        2
+    )
+
+    print(
+        f"Taxa de identificação: "
+        f"{percentual}%"
+    )
+
+print("================================\n")
 
 if __name__ == "__main__":
     main()
