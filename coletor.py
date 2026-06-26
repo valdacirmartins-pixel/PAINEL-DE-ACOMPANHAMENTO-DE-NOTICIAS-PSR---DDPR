@@ -191,18 +191,18 @@ def inserir_registro(registro):
         query_origem
     )
     VALUES (
-        :titulo,
-        :url,
-        :municipio,
-        :uf,
-        :categoria,
-        :latitude,
-        :longitude,
-        :data_coleta,
-        :data_coleta,
-        :data_publicacao,
-        :query_origem
-    )
+    :titulo,
+    :url,
+    :municipio,
+    :uf,
+    :categoria,
+    :latitude,
+    :longitude,
+    :data_publicacao,
+    :data_coleta,
+    :data_publicacao,
+    :query_origem
+)
     ON CONFLICT (url) DO NOTHING;
     """
 
@@ -300,7 +300,14 @@ def classificar(texto):
         "homicídio",
         "executado",
         "corpo encontrado",
-        "óbito"
+        "óbito",
+        "faleceu",
+        "morre",
+        "cadáver",
+        "cadaver",
+        "encontrado sem vida",
+        "latrocínio",
+        "latrocinio"
     ]
 
     violencia = [
@@ -311,7 +318,13 @@ def classificar(texto):
         "baleado",
         "esfaqueado",
         "ataque",
-        "ferido"
+        "ferido",
+        "tentativa de homicídio",
+        "tentativa de homicidio",
+        "ameaçado",
+        "ameaçado de morte",
+        "roubado",
+        "assalto"
     ]
 
     acidente = [
@@ -421,7 +434,7 @@ def processar_noticia(item):
             return None
 
 
-        base = f"{titulo} {texto} {url}"
+        base = f"{titulo} {texto}"
 
 
         municipio_norm = detectar_municipio(base)
@@ -449,14 +462,14 @@ def processar_noticia(item):
 
         data_publicacao = None
 
-        try:
+if artigo:
+    try:
+        data_publicacao = artigo.publish_date
+    except Exception:
+        pass
 
-            if artigo:
-                data_publicacao = artigo.publish_date
-
-        except:
-
-            pass
+if data_publicacao is None:
+    data_publicacao = datetime.now()
 
 
         return {
@@ -490,6 +503,21 @@ def buscar_urls():
 
 
     anos = [str(a) for a in range(2010, 2027)]
+meses = [
+    "janeiro",
+    "fevereiro",
+    "março",
+    "abril",
+    "maio",
+    "junho",
+    "julho",
+    "agosto",
+    "setembro",
+    "outubro",
+    "novembro",
+    "dezembro"
+]
+
 
     estados = list(MAPA_UF.values())
 
@@ -539,7 +567,9 @@ def buscar_urls():
             queries.append(
                 f"{q} {ano}"
             )
-
+for ano in anos:
+    for mes in meses:
+        queries.append(f"{q} {mes} {ano}")
 
         for uf in estados:
 
@@ -591,7 +621,7 @@ def buscar_urls():
 
                     safesearch="off",
 
-                    max_results=100
+                    max_results=300
 
                 )
 
@@ -603,6 +633,7 @@ def buscar_urls():
 
 
                     url = r.get("href")
+                    url = url.split("?")[0]
 
 
                     if not url:
@@ -623,8 +654,14 @@ def buscar_urls():
                         "/tag/",
                         "/categoria/",
                         "/search/",
-                        "/busca/"
-
+                        "/busca/",
+                        "linkedin",
+                        "whatsapp",
+                        "telegram",
+                        "pinterest",
+                        "google.com",
+                        "webcache",
+                        "archive.org",
                     ]):
 
                         continue
@@ -650,7 +687,7 @@ def buscar_urls():
 
 
 
-            time.sleep(0.1)
+            time.sleep(random.uniform(0.2, 0.5))
 
 
 
